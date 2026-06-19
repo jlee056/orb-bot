@@ -337,6 +337,11 @@ def main():
     print(f"  ORB Bot — {today}")
     print(f"{'='*50}\n")
 
+    # Skip Fridays
+    if datetime.now().weekday() == 4:
+        print(f"[{ts()}] Friday — skipping. No trades on Fridays.")
+        return
+
     # Check daily and monthly loss limits before doing anything
     should_halt, halt_reason = check_daily_limits()
     if should_halt:
