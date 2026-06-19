@@ -26,10 +26,18 @@ def connect_tws():
 
 def get_mnq_contract():
     contract = Future(config.SYMBOL, exchange=config.EXCHANGE, currency=config.CURRENCY)
-    contracts = ib.qualifyContracts(contract)
-    if not contracts:
+    details = ib.reqContractDetails(contract)
+    if not details:
         raise RuntimeError("Could not resolve MNQ front-month contract. Is TWS running with market data?")
-    c = contracts[0]
+    today = datetime.now().strftime("%Y%m%d")
+    valid = sorted(
+        [d for d in details if d.contract.lastTradeDateOrContractMonth >= today],
+        key=lambda d: d.contract.lastTradeDateOrContractMonth,
+    )
+    if not valid:
+        raise RuntimeError("No active MNQ contracts found.")
+    c = valid[0].contract
+    ib.qualifyContracts(c)
     print(f"[{ts()}] Contract: {c.localSymbol} exp {c.lastTradeDateOrContractMonth}")
     return c
 
@@ -42,16 +50,16 @@ def get_market_conditions():
     """Fetch VIX, NQ 20-day EMA status, and overnight gap before connecting to TWS.
     Returns a dict or None on network failure (soft-fail — don't block on data error)."""
     try:
-        vix_data = yf.download("^VIX", period="2d", progress=False)["Close"]
+        vix_data = yf.download("^VIX", period="2d", progress=False)["Close"].squeeze()
         vix = float(vix_data.iloc[-1])
 
-        nq_daily = yf.download("NQ=F", period="30d", progress=False)["Close"]
+        nq_daily = yf.download("NQ=F", period="30d", progress=False)["Close"].squeeze()
         ema20 = nq_daily.ewm(span=20, adjust=False).mean()
         nq_above_ema = float(nq_daily.iloc[-1]) > float(ema20.iloc[-1])
 
         prev_close = float(nq_daily.iloc[-1])
         nq_intraday = yf.download("NQ=F", period="1d", interval="1m", progress=False)
-        today_open = float(nq_intraday["Open"].iloc[0])
+        today_open = float(nq_intraday["Open"].squeeze().iloc[0])
         gap_pct = (today_open - prev_close) / prev_close
 
         print(f"[{ts()}] VIX: {vix:.1f}  NQ above EMA20: {nq_above_ema}  Gap: {gap_pct*100:.2f}%")
@@ -328,11 +336,6 @@ def main():
     print(f"\n{'='*50}")
     print(f"  ORB Bot — {today}")
     print(f"{'='*50}\n")
-
-    # Skip Fridays
-    if datetime.now().weekday() == 4:
-        print(f"[{ts()}] Friday — skipping. No trades on Fridays.")
-        return
 
     # Check daily and monthly loss limits before doing anything
     should_halt, halt_reason = check_daily_limits()
