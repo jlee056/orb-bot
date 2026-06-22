@@ -50,16 +50,16 @@ def get_market_conditions():
     """Fetch VIX, NQ 20-day EMA status, and overnight gap before connecting to TWS.
     Returns a dict or None on network failure (soft-fail — don't block on data error)."""
     try:
-        vix_data = yf.download("^VIX", period="2d", progress=False)["Close"].squeeze()
+        vix_data = yf.download("^VIX", period="2d", progress=False, multi_level_index=False)["Close"]
         vix = float(vix_data.iloc[-1])
 
-        nq_daily = yf.download("NQ=F", period="30d", progress=False)["Close"].squeeze()
+        nq_daily = yf.download("NQ=F", period="30d", progress=False, multi_level_index=False)["Close"]
         ema20 = nq_daily.ewm(span=20, adjust=False).mean()
         nq_above_ema = float(nq_daily.iloc[-1]) > float(ema20.iloc[-1])
 
-        prev_close = float(nq_daily.iloc[-1])
-        nq_intraday = yf.download("NQ=F", period="1d", interval="1m", progress=False)
-        today_open = float(nq_intraday["Open"].squeeze().iloc[0])
+        prev_close = float(nq_daily.iloc[-2])  # yesterday's close, not today's partial bar
+        nq_intraday = yf.download("NQ=F", period="1d", interval="1m", progress=False, multi_level_index=False)
+        today_open = float(nq_intraday["Open"].iloc[0])
         gap_pct = (today_open - prev_close) / prev_close
 
         print(f"[{ts()}] VIX: {vix:.1f}  NQ above EMA20: {nq_above_ema}  Gap: {gap_pct*100:.2f}%")
@@ -157,15 +157,15 @@ def collect_opening_range(contract):
         durationStr="3600 S",   # 60 min of history to safely cover the 30-min window
         barSizeSetting="1 min",
         whatToShow="TRADES",
-        useRTH=True,
+        useRTH=False,
         formatDate=1,
     )
 
     if not bars:
         raise RuntimeError("No bar data returned. Check market hours and data permissions.")
 
-    # First 30 bars = 9:30–9:59 AM ET
-    opening_bars = bars[:config.OPENING_RANGE_MIN]
+    # Last 30 bars of the 60-min window = 9:30–9:59 AM ET
+    opening_bars = bars[-config.OPENING_RANGE_MIN:]
     orb_high = max(b.high for b in opening_bars)   # top wick
     orb_low  = min(b.low  for b in opening_bars)   # bottom wick
     mid      = (orb_high + orb_low) / 2
@@ -200,13 +200,14 @@ def watch_for_breakout(contract, orb_high, orb_low):
             print(f"[{ts()}] Entry cutoff reached — no trade today.")
             return None
 
+        ib.sleep(2)  # prevent IBKR pacing violations (~6 req/10s limit)
         bars = ib.reqHistoricalData(
             contract,
             endDateTime="",
-            durationStr="300 S",
+            durationStr="1800 S",
             barSizeSetting="5 mins",
             whatToShow="TRADES",
-            useRTH=True,
+            useRTH=False,
             formatDate=1,
         )
 
@@ -246,16 +247,19 @@ def place_bracket_order(contract, entry, stop, target, contracts):
     parent = MarketOrder("BUY", contracts)
     parent.orderId  = ib.client.getReqId()
     parent.transmit = False
+    parent.tif      = "DAY"
 
     take_profit = LimitOrder("SELL", contracts, round(target, 2))
     take_profit.orderId  = ib.client.getReqId()
     take_profit.parentId = parent.orderId
     take_profit.transmit = False
+    take_profit.tif      = "DAY"
 
     stop_loss = StopOrder("SELL", contracts, round(stop, 2))
     stop_loss.orderId  = ib.client.getReqId()
     stop_loss.parentId = parent.orderId
     stop_loss.transmit = True
+    stop_loss.tif      = "DAY"
 
     for order in [parent, take_profit, stop_loss]:
         ib.placeOrder(contract, order)
@@ -272,13 +276,19 @@ def place_bracket_order(contract, entry, stop, target, contracts):
 # ---------------------------------------------------------------------------
 
 def eod_close(contract):
+    open_trades = [t for t in ib.openTrades() if t.contract.symbol == config.SYMBOL]
+    for trade in open_trades:
+        ib.cancelOrder(trade.order)
+    if open_trades:
+        ib.sleep(2)
+
     positions = ib.positions()
     for pos in positions:
         if pos.contract.symbol == config.SYMBOL and pos.position != 0:
             qty  = abs(int(pos.position))
             side = "SELL" if pos.position > 0 else "BUY"
             ib.placeOrder(contract, MarketOrder(side, qty))
-            print(f"[{ts()}] EOD close — {side} {qty} MNQ @ market")
+            print(f"[{ts()}] EOD close — cancelled {len(open_trades)} bracket leg(s), {side} {qty} MNQ @ market")
             return
     print(f"[{ts()}] EOD — no open position to close.")
 
