@@ -377,10 +377,8 @@ def main():
             return
 
         if not conditions["nq_above_ema"]:
-            reason = "nq_below_20ema"
-            print(f"[{ts()}] Skipping — NQ is below its 20-day EMA (bearish regime)")
-            log_trade(today, None, None, None, skipped=reason, vix=conditions["vix"])
-            return
+            # EMA filter temporarily disabled for paper testing — log but don't skip
+            print(f"[{ts()}] NOTE: NQ is below 20-day EMA (bearish regime) — logging only, not skipping (paper test mode)")
 
         if conditions["gap_pct"] > config.GAP_SKIP_PCT:
             reason = f"gap_too_large ({conditions['gap_pct']*100:.2f}% > {config.GAP_SKIP_PCT*100:.1f}%)"
