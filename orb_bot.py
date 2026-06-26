@@ -6,6 +6,7 @@ from ib_insync import IB, Future, MarketOrder, LimitOrder, StopOrder, util
 import yfinance as yf
 
 import config
+import events
 
 util.startLoop()
 ib = IB()
@@ -53,17 +54,42 @@ def get_market_conditions():
         vix_data = yf.download("^VIX", period="2d", progress=False, multi_level_index=False)["Close"]
         vix = float(vix_data.iloc[-1])
 
-        nq_daily = yf.download("NQ=F", period="30d", progress=False, multi_level_index=False)["Close"]
+        # 90 days of daily bars — a 20-EMA needs ~60-90 bars to stabilize (30d was a bug).
+        nq_ohlc = yf.download("NQ=F", period="90d", progress=False, multi_level_index=False)
+        nq_daily = nq_ohlc["Close"]
         ema20 = nq_daily.ewm(span=20, adjust=False).mean()
         nq_above_ema = float(nq_daily.iloc[-1]) > float(ema20.iloc[-1])
+
+        # How many of the most recent consecutive sessions closed above the EMA
+        # (anti-whipsaw: research wants 3+ before taking a long).
+        days_above_ema = 0
+        for close_v, ema_v in zip(reversed(nq_daily.tolist()), reversed(ema20.tolist())):
+            if close_v > ema_v:
+                days_above_ema += 1
+            else:
+                break
+
+        # ATR(N) on the daily bars (NQ index points ≈ MNQ price points) for the stop.
+        atr = None
+        try:
+            high = nq_ohlc["High"]
+            low = nq_ohlc["Low"]
+            prev_c = nq_daily.shift(1)
+            tr = (high - low).combine((high - prev_c).abs(), max).combine((low - prev_c).abs(), max)
+            atr = float(tr.rolling(config.ATR_PERIOD).mean().iloc[-1])
+        except Exception:
+            atr = None
 
         prev_close = float(nq_daily.iloc[-2])  # yesterday's close, not today's partial bar
         nq_intraday = yf.download("NQ=F", period="1d", interval="1m", progress=False, multi_level_index=False)
         today_open = float(nq_intraday["Open"].iloc[0])
         gap_pct = (today_open - prev_close) / prev_close
 
-        print(f"[{ts()}] VIX: {vix:.1f}  NQ above EMA20: {nq_above_ema}  Gap: {gap_pct*100:.2f}%")
-        return {"vix": vix, "nq_above_ema": nq_above_ema, "gap_pct": gap_pct}
+        atr_str = f"{atr:.1f}" if atr is not None else "n/a"
+        print(f"[{ts()}] VIX: {vix:.1f}  NQ above EMA20: {nq_above_ema} ({days_above_ema}d)  "
+              f"Gap: {gap_pct*100:.2f}%  ATR: {atr_str}")
+        return {"vix": vix, "nq_above_ema": nq_above_ema, "days_above_ema": days_above_ema,
+                "gap_pct": gap_pct, "atr": atr}
 
     except Exception as e:
         print(f"[{ts()}] Market condition fetch failed ({e}) — proceeding without filters")
@@ -191,14 +217,19 @@ def range_is_valid(range_pct):
 # ---------------------------------------------------------------------------
 
 def watch_for_breakout(contract, orb_high, orb_low):
-    """Poll every 5 minutes. Return ('long', price) on breakout, or None if cutoff reached."""
+    """Poll every 5 minutes. Returns one of:
+       ("long", price)   — upside breakout (the only tradable signal),
+       "downside_break"  — range broke down first (long-only: no trade),
+       "no_breakout"     — entry cutoff reached with no breakout.
+    Both no-trade outcomes are genuine signal-absence, not filter skips —
+    there is no valid long entry, so paper mode does not override them."""
     print(f"[{ts()}] Watching for breakout (long only, cutoff 11:00 AM)...")
 
     while True:
         now = datetime.now().time()
         if now >= time(config.ENTRY_CUTOFF_HOUR, 0):
             print(f"[{ts()}] Entry cutoff reached — no trade today.")
-            return None
+            return "no_breakout"
 
         ib.sleep(2)  # prevent IBKR pacing violations (~6 req/10s limit)
         bars = ib.reqHistoricalData(
@@ -219,8 +250,8 @@ def watch_for_breakout(contract, orb_high, orb_low):
                 print(f" — BREAKOUT ABOVE RANGE")
                 return ("long", last_close)
             elif last_close < orb_low:
-                print(f" — range broken to downside, skipping today.")
-                return None
+                print(f" — range broken to downside, no long entry today.")
+                return "downside_break"
             else:
                 print(f" — no breakout")
 
@@ -237,6 +268,17 @@ def calc_contracts(entry, stop, dollar_risk):
     if risk_per_cont == 0:
         return 1
     return max(1, min(math.floor(dollar_risk / risk_per_cont), config.MAX_CONTRACTS))
+
+
+def compute_stop(entry, orb_high, orb_low, atr):
+    """Stop price per config.STOP_MODE.
+       'atr'      => max(orb_low, entry - ATR_STOP_MULT*ATR)  (research-preferred)
+       'midpoint' => (orb_high + orb_low) / 2                 (validated fallback)
+    Falls back to midpoint if ATR is unavailable (e.g. yfinance failed)."""
+    midpoint = (orb_high + orb_low) / 2
+    if config.STOP_MODE == "atr" and atr:
+        return max(orb_low, entry - config.ATR_STOP_MULT * atr)
+    return midpoint
 
 
 # ---------------------------------------------------------------------------
@@ -268,7 +310,34 @@ def place_bracket_order(contract, entry, stop, target, contracts):
           f"Stop: {stop:.2f} | Target: {target:.2f}")
     print(f"[{ts()}] Bracket order placed.")
 
-    return parent.orderId
+    return parent.orderId, stop_loss
+
+
+def manage_position(contract, stop_order, entry, target, eod_time):
+    """Poll until EOD. Once price reaches BREAKEVEN_TRIGGER_RATIO of the way to
+    target, move the stop to entry (breakeven) — exactly once. No trailing
+    afterward (QuantCrawler: trailing reduced PnL)."""
+    trigger = entry + config.BREAKEVEN_TRIGGER_RATIO * (target - entry)
+    moved_to_breakeven = False
+    print(f"[{ts()}] Managing position — breakeven trigger at {trigger:.2f} (stop->entry)...")
+
+    while datetime.now().time() < eod_time:
+        ib.sleep(2)
+        bars = ib.reqHistoricalData(
+            contract, endDateTime="", durationStr="600 S",
+            barSizeSetting="1 min", whatToShow="TRADES", useRTH=False, formatDate=1,
+        )
+        if bars and not moved_to_breakeven:
+            last_close = bars[-1].close
+            if last_close >= trigger:
+                try:
+                    stop_order.auxPrice = round(entry, 2)
+                    ib.placeOrder(contract, stop_order)
+                    moved_to_breakeven = True
+                    print(f"[{ts()}] Price {last_close:.2f} >= {trigger:.2f} — stop moved to breakeven {entry:.2f}.")
+                except Exception as e:
+                    print(f"[{ts()}] Breakeven move failed ({e}) — leaving original stop.")
+        ib.sleep(30)
 
 
 # ---------------------------------------------------------------------------
@@ -299,14 +368,18 @@ def eod_close(contract):
 
 def log_trade(date, orb_high, orb_low, range_pct, skipped,
               entry=None, stop=None, target=None, exit_price=None,
-              contracts=0, pnl=None, vix=None):
+              contracts=0, pnl=None, vix=None, would_skip=""):
+    """Append a row. `skipped` is the ACTUAL outcome ("N" traded, or a no-trade
+    reason). `would_skip` is a ";"-joined list of filters that fired but were
+    overridden in paper mode — the data we use to validate the filters later."""
     file_exists = os.path.isfile(config.TRADE_LOG)
     with open(config.TRADE_LOG, "a", newline="") as f:
         writer = csv.writer(f)
         if not file_exists:
             writer.writerow([
                 "date", "range_high", "range_low", "range_pct", "skipped",
-                "entry", "stop", "target", "exit", "contracts", "pnl_usd", "win", "vix"
+                "entry", "stop", "target", "exit", "contracts", "pnl_usd", "win", "vix",
+                "would_skip"
             ])
         win = None
         if pnl is not None:
@@ -320,7 +393,8 @@ def log_trade(date, orb_high, orb_low, range_pct, skipped,
             entry, stop, target, exit_price, contracts,
             f"{pnl:.2f}" if pnl is not None else "",
             win or "",
-            f"{vix:.1f}" if vix is not None else ""
+            f"{vix:.1f}" if vix is not None else "",
+            would_skip
         ])
 
 
@@ -345,49 +419,96 @@ def main():
     today = datetime.now().strftime("%Y-%m-%d")
     print(f"\n{'='*50}")
     print(f"  ORB Bot — {today}")
+    if config.PAPER_LOG_ONLY:
+        print("  PAPER LOG-ONLY MODE — filters log but never skip")
     print(f"{'='*50}\n")
 
-    # Skip Fridays
-    if datetime.now().weekday() == 4:
-        print(f"[{ts()}] Friday — skipping. No trades on Fridays.")
-        return
+    # Per-day accumulator of filters that fired. In paper mode the bot keeps
+    # trading and records these in the 'would_skip' column; in live mode the
+    # first failing filter skips immediately (and this stays empty).
+    would_skip = []
 
-    # Check daily and monthly loss limits before doing anything
+    def gate(reason):
+        """Return True if the bot must STOP for this reason (live mode),
+        False to CONTINUE (paper log-only mode — reason recorded)."""
+        if config.PAPER_LOG_ONLY:
+            would_skip.append(reason)
+            print(f"[{ts()}] [PAPER] would skip — {reason}  (continuing)")
+            return False
+        print(f"[{ts()}] Skipping — {reason}")
+        return True
+
+    # --- Filter: Friday ---
+    if datetime.now().weekday() == 4:
+        if gate("friday"):
+            return
+
+    # --- Filter: daily / monthly loss limit ---
     should_halt, halt_reason = check_daily_limits()
     if should_halt:
-        print(f"[{ts()}] HALTED — {halt_reason}. No trade today.")
-        log_trade(today, None, None, None, skipped=halt_reason)
-        return
+        if gate(halt_reason):
+            log_trade(today, None, None, None, skipped=halt_reason, would_skip=";".join(would_skip))
+            return
 
-    # Fetch market conditions via yfinance (VIX, NQ EMA, gap)
+    # --- Filter: high-impact event day (CPI/NFP/PCE/GDP/FOMC/earnings) ---
+    todays_events = events.get_events_today(today)
+    if todays_events:
+        if gate(f"event_day({','.join(todays_events)})"):
+            log_trade(today, None, None, None, skipped=f"event_day({','.join(todays_events)})",
+                      would_skip=";".join(would_skip))
+            return
+
+    # Fetch market conditions via yfinance (VIX, NQ EMA + days above, gap, ATR)
     conditions = get_market_conditions()
     vix = conditions["vix"] if conditions else None
+    atr = conditions["atr"] if conditions else None
 
     if conditions:
+        # --- Filter: VIX too low ---
         if conditions["vix"] < config.VIX_MIN:
             reason = f"vix_too_low ({conditions['vix']:.1f} < {config.VIX_MIN})"
-            print(f"[{ts()}] Skipping — {reason}")
-            log_trade(today, None, None, None, skipped=reason, vix=conditions["vix"])
-            return
+            if gate(reason):
+                log_trade(today, None, None, None, skipped=reason, vix=vix, would_skip=";".join(would_skip))
+                return
 
+        # --- Filter: VIX too high ---
         if conditions["vix"] > config.VIX_MAX:
             reason = f"vix_too_high ({conditions['vix']:.1f} > {config.VIX_MAX})"
-            print(f"[{ts()}] Skipping — {reason}")
-            log_trade(today, None, None, None, skipped=reason, vix=conditions["vix"])
-            return
+            if gate(reason):
+                log_trade(today, None, None, None, skipped=reason, vix=vix, would_skip=";".join(would_skip))
+                return
 
+        # --- Filter: EMA trend (below EMA, or not yet confirmed 3+ days above) ---
         if not conditions["nq_above_ema"]:
-            # EMA filter temporarily disabled for paper testing — log but don't skip
-            print(f"[{ts()}] NOTE: NQ is below 20-day EMA (bearish regime) — logging only, not skipping (paper test mode)")
+            if gate("below_ema"):
+                log_trade(today, None, None, None, skipped="below_ema", vix=vix, would_skip=";".join(would_skip))
+                return
+        elif conditions["days_above_ema"] < config.EMA_DAYS_ABOVE_REQUIRED:
+            reason = f"ema_whipsaw ({conditions['days_above_ema']}d < {config.EMA_DAYS_ABOVE_REQUIRED}d above)"
+            if gate(reason):
+                log_trade(today, None, None, None, skipped=reason, vix=vix, would_skip=";".join(would_skip))
+                return
 
+        # --- Filter: gap too large ---
         if conditions["gap_pct"] > config.GAP_SKIP_PCT:
             reason = f"gap_too_large ({conditions['gap_pct']*100:.2f}% > {config.GAP_SKIP_PCT*100:.1f}%)"
-            print(f"[{ts()}] Skipping — {reason}")
-            log_trade(today, None, None, None, skipped=reason, vix=conditions["vix"])
-            return
+            if gate(reason):
+                log_trade(today, None, None, None, skipped=reason, vix=vix, would_skip=";".join(would_skip))
+                return
+
+    # --- Monitor (never skips, even live): historically weak weekday ---
+    if datetime.now().weekday() in config.WEAK_WEEKDAYS:
+        would_skip.append("weak_weekday")
+        print(f"[{ts()}] NOTE: today is a flagged weak weekday — monitoring only.")
 
     # Get effective risk (reduced automatically if on a losing streak)
     dollar_risk = get_effective_risk()
+
+    # September size reducer (NOT a skip)
+    if datetime.now().month == 9:
+        dollar_risk *= config.SEPTEMBER_SIZE_MULT
+        would_skip.append("september_half_size")
+        print(f"[{ts()}] September — halving size to ${dollar_risk:.0f}.")
 
     connect_tws()
     contract = get_mnq_contract()
@@ -402,30 +523,41 @@ def main():
     # Collect and validate opening range
     orb_high, orb_low, range_pct = collect_opening_range(contract)
 
+    # --- Filter: range too wide (choppy day) ---
     if not range_is_valid(range_pct):
-        log_trade(today, orb_high, orb_low, range_pct, skipped="range_too_wide", vix=vix)
-        ib.disconnect()
-        return
+        if gate("range_too_wide"):
+            log_trade(today, orb_high, orb_low, range_pct, skipped="range_too_wide", vix=vix,
+                      would_skip=";".join(would_skip))
+            ib.disconnect()
+            return
 
-    # Watch for breakout
+    # Watch for breakout — "long" trades; downside_break / no_breakout are
+    # genuine signal-absence (no valid long entry), logged as no-trade.
     result = watch_for_breakout(contract, orb_high, orb_low)
 
-    if result is None:
-        log_trade(today, orb_high, orb_low, range_pct, skipped="no_breakout", vix=vix)
+    if result in ("no_breakout", "downside_break"):
+        log_trade(today, orb_high, orb_low, range_pct, skipped=result, vix=vix,
+                  would_skip=";".join(would_skip))
         ib.disconnect()
         return
 
     direction, entry = result
-    stop   = (orb_high + orb_low) / 2          # midpoint stop — better win rate than range low
+    stop   = compute_stop(entry, orb_high, orb_low, atr)
     target = orb_high + config.TARGET_RATIO * (orb_high - orb_low)
     qty    = calc_contracts(entry, stop, dollar_risk)
 
-    place_bracket_order(contract, entry, stop, target, qty)
+    parent_id, stop_order = place_bracket_order(contract, entry, stop, target, qty)
 
-    # Wait for EOD safety close (bracket order handles exits; this is the backstop)
-    eod_time = time(config.EOD_CLOSE_HOUR, config.EOD_CLOSE_MINUTE)
-    print(f"[{ts()}] Waiting until {eod_time} for EOD close...")
-    wait_until(eod_time)
+    # Manage the position to EOD: move stop to breakeven at 0.75x to target.
+    # FOMC days force-close early (1:30 PM) to dodge the announcement whipsaw.
+    if events.is_fomc(today):
+        eod_time = time(config.FOMC_CLOSE_HOUR, config.FOMC_CLOSE_MINUTE)
+        print(f"[{ts()}] FOMC day — forcing early close at {eod_time}.")
+    else:
+        eod_time = time(config.EOD_CLOSE_HOUR, config.EOD_CLOSE_MINUTE)
+
+    manage_position(contract, stop_order, entry, target, eod_time)
+    print(f"[{ts()}] EOD reached — closing any open position...")
     eod_close(contract)
 
     ib.sleep(5)
@@ -445,7 +577,8 @@ def main():
 
     log_trade(today, orb_high, orb_low, range_pct, skipped="N",
               entry=round(entry, 2), stop=round(stop, 2), target=round(target, 2),
-              exit_price=exit_px, contracts=qty, pnl=pnl, vix=vix)
+              exit_price=exit_px, contracts=qty, pnl=pnl, vix=vix,
+              would_skip=";".join(would_skip))
 
     ib.disconnect()
     print(f"[{ts()}] Done. See trade_log.csv for record.\n")
