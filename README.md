@@ -16,21 +16,27 @@ The Opening Range Breakout (ORB) strategy captures momentum after the first 30 m
 1. **9:30–9:59 AM ET** — Market opens, bot watches
 2. **10:00 AM ET** — Opening range locked: wick high and wick low of the first 30 minutes
 3. **10:00–11:00 AM ET** — Wait for a 5-minute candle to **close** above the range high
-4. **On breakout** — Enter long with bracket order: stop at range midpoint, target at range high + 1.0× range
-5. **After 11:00 AM** — No new entries
-6. **3:50 PM ET** — Force-close any open position (bracket order handles exits; this is the backstop)
+4. **On breakout** — Enter long with bracket order. Stop is ATR-based — `max(range low, entry − 0.4× ATR)` — or the range midpoint (configurable via `STOP_MODE`). Target = range high + 1.0× range.
+5. **Stop-to-breakeven** — Once price is 75% of the way to target, the stop moves up to entry (no trailing)
+6. **After 11:00 AM** — No new entries
+7. **3:50 PM ET** — Force-close any open position (1:30 PM ET on FOMC days). The bracket order handles exits; this is the backstop.
 
-**Filters — days the bot skips:**
-- Fridays (consistently worst ORB day)
-- VIX below 13 (too calm — 48% win rate, no edge)
-- VIX above 35 (danger zone — April 2025 tariff shock hit VIX 60)
-- NQ below its 20-day EMA (bearish regime — removes ~70% of losing long setups)
-- Overnight gap-up > 0.7% (breakout from exhausted gap = low follow-through)
-- Range exceeds 0.8% of price (too choppy to trade)
-- Daily loss >= $150 or monthly loss >= $300 (Elder's 6% monthly rule)
+**Filters — days the strategy skips (live mode):**
+- VIX below 13 (too calm — 48% win rate, no edge) or above 35 (danger zone — April 2025 tariff shock hit VIX 60)
+- NQ not yet 3 consecutive closes above its 20-day EMA (unconfirmed/bearish regime — removes ~70% of losing long setups)
+- Overnight gap-up > 0.7% (breakout from an exhausted gap = low follow-through)
+- Opening range exceeds 0.8% of price (too choppy to trade)
+- High-impact event mornings — FOMC, CPI, PPI, PCE, GDP, and Mag-7 earnings (`events.py`)
+- Daily loss ≥ $150 or monthly loss ≥ $300 (Elder's 6% monthly rule)
+- Fridays — *disabled during paper trading to gather full data; re-added before going live*
 
-**Automatic risk reduction:**
+> **Paper-log-only mode (current phase).** With `PAPER_LOG_ONLY=1` (the default) none of the filters above actually skip. Each one instead logs the reason it *would* have skipped into the `would_skip` CSV column and the bot trades the day anyway — so we gather real fills and can later measure which filters truly help. Genuine signal-absence days (`no_breakout`, or a downside-first break, since this is long-only) are still real no-trades. Set `PAPER_LOG_ONLY=0` before going live so the filters skip for real.
+
+**Risk management on a live trade:**
+- 1.5% risk per trade, hard cap of 3 contracts
 - After 3 consecutive losses, risk per trade halves until a winning trade resets it
+- September: position size halved (historically weak month — a size reducer, not a skip)
+- FOMC days: force-close at 1:30 PM ET to dodge the announcement whipsaw
 
 ---
 
@@ -77,6 +83,7 @@ All parameters live in `config.py`:
 |-----------|---------|-------------|
 | `TWS_PORT` | `7497` | `7497` = paper, `7496` = live |
 | `TWS_HOST` | `127.0.0.1` | Localhost (same machine as TWS) |
+| `PAPER_LOG_ONLY` | `1` | `1` = filters log `would_skip` and keep trading; `0` = filters skip for real (set before going live) |
 | `OPENING_RANGE_MIN` | `30` | Minutes used to define the range |
 | `TARGET_RATIO` | `1.0` | Target = ORB high + 1.0× range size |
 | `ENTRY_CUTOFF_HOUR` | `11` | No entries after this hour (ET) |
@@ -91,6 +98,13 @@ All parameters live in `config.py`:
 | `VIX_MAX` | `35` | Skip if VIX above this |
 | `GAP_SKIP_PCT` | `0.007` | Skip if overnight gap-up exceeds 0.7% |
 | `MAX_RANGE_PCT` | `0.008` | Skip if range exceeds 0.8% of price |
+| `EMA_DAYS_ABOVE_REQUIRED` | `3` | Consecutive closes above the 20-day EMA required before a long |
+| `STOP_MODE` | `atr` | `atr` = `max(range low, entry − mult×ATR)`; `midpoint` = range midpoint |
+| `ATR_PERIOD` | `14` | ATR lookback in daily bars |
+| `ATR_STOP_MULT` | `0.4` | ATR multiple for the stop distance |
+| `BREAKEVEN_TRIGGER_RATIO` | `0.75` | Move stop to entry once price is this fraction of the way to target |
+| `SEPTEMBER_SIZE_MULT` | `0.5` | Position-size multiplier in September (weak month) |
+| `STREAK_RISK_MULT` | `0.5` | Risk multiplier applied after `STREAK_THRESHOLD` consecutive losses |
 
 ---
 
@@ -156,10 +170,10 @@ yfinance>=0.2
 Every trade and every skip auto-appends to `trade_log.csv` (gitignored):
 
 ```
-date, range_high, range_low, range_pct, skipped, entry, stop, target, exit, contracts, pnl_usd, win, vix
+date, range_high, range_low, range_pct, skipped, entry, stop, target, exit, contracts, pnl_usd, win, vix, would_skip
 ```
 
-The `vix` column lets you analyze which VIX environments produce the best results over time. The `skipped` column shows exactly why the bot passed on a given day.
+The `vix` column lets you analyze which VIX environments produce the best results over time. The `skipped` column records genuine no-trade days — `no_breakout` (price never closed above the range) or `downside_break` (broke down first; this is long-only). The `would_skip` column is the paper-mode validation field: a `;`-joined list of every filter that fired but was overridden so the bot still traded — exactly the data needed to measure which filters help before going live.
 
 ---
 
@@ -170,17 +184,21 @@ The `vix` column lets you analyze which VIX environments produce the best result
 - [x] IBKR account opened
 - [x] Code optimized with research-backed parameters
 - [x] GitHub published
-- [ ] TWS installed and API enabled
+- [x] TWS installed and API enabled (paper account, port 7497)
+- [x] Paper-log-only mode + `events.py` + ATR/breakeven risk logic built
+- [x] First clean end-to-end paper run (filters logged-and-continued, ran to cutoff)
+- [ ] First paper **fill** logged (needs a day that actually breaks out)
 - [ ] 30+ paper trades logged
 - [ ] Win rate ≥ 60% confirmed over sample
-- [ ] Go live (`TWS_PORT = 7496`)
+- [ ] Go live (`PAPER_LOG_ONLY = 0`, re-add Friday skip, `TWS_PORT = 7496`)
 
 ---
 
 ## Files
 
-- `orb_bot.py` — main bot (~240 lines)
+- `orb_bot.py` — main bot (connect, range lock, breakout poll, bracket order, ATR stop, breakeven, logging)
 - `config.py` — all tunable parameters with research citations
+- `events.py` — hand-maintained economic-calendar / earnings day filter (FOMC, CPI, PPI, PCE, GDP, Mag-7 earnings)
 - `setup_guide.md` — full IBKR + TWS setup walkthrough
 - `requirements.txt` — Python dependencies
 - `trade_log.csv` — auto-generated trade journal (gitignored)
