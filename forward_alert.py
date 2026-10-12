@@ -30,6 +30,19 @@ from forward_run import TZ, fetch, fetch_vix, strategy_params
 DATA_LAG_MIN = 15   # keep polling this long past the cutoff so delayed bars can arrive
 
 
+def sent_titles():
+    """Titles of the pushes in the topic's recent history (about 12 hours). None if unreadable."""
+    topic = os.getenv("NTFY_TOPIC", "").strip()
+    if not topic:
+        return None
+    try:
+        raw = urllib.request.urlopen(f"https://ntfy.sh/{topic}/json?poll=1&since=12h", timeout=20).read()
+        return [json.loads(line).get("title", "") for line in raw.decode("utf-8").splitlines() if line]
+    except Exception as e:
+        print(f"could not read push history ({e})")
+        return None
+
+
 def already_sent(title):
     """True if a push with this exact title is already in the topic's recent history (ntfy keeps
     about 12 hours). Titles carry the date, so this makes each day's message send-once even when

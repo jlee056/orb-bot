@@ -216,7 +216,7 @@ def mode_entry():
         print("Market is closed today.")
         return 0
     if hours[1].hour * 60 + hours[1].minute < A.RTH_CLOSE:
-        push(f"ORB QQQ {today:%b} {today.day}: no trade", "Half day: the bot does not trade shortened sessions.",
+        push(f"ORB QQQ {today:%a %b} {today.day}: no trade", "Half day: the bot does not trade shortened sessions.",
              "no_entry_sign")
         return 0
     if broker.has_order(order_id(today)):

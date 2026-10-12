@@ -8,6 +8,9 @@ The jobs themselves are safe to start more than once (one order and one push per
   python watchdog.py close     paper-close                   (window 11:00 to 15:45 ET)
   python watchdog.py eod       forward-eod                   (window 16:20 to 23:59 ET)
 
+  python watchdog.py check-morning   after 12:20 ET: phone alert if a morning message is missing
+  python watchdog.py check-close     after 16:20 ET: phone alert if the day's result is missing
+
 Needs the GitHub CLI (`gh`) logged in on this PC. Writes watchdog.log next to this file.
 """
 import json
@@ -55,8 +58,44 @@ def started_in_window(workflow, lo, hi, today):
     return False
 
 
+def check(which):
+    """Make a silent failure loud: if an expected push is not in today's history, send a problem push."""
+    import alpaca_io as A
+    from forward_alert import push, sent_titles
+    now = datetime.now(ET)
+    if now.weekday() >= 5:
+        return 0
+    try:
+        if A.have_keys() and A.AlpacaBroker().hours(now.date()) is None:
+            log(f"{which}: market closed today, nothing expected")
+            return 0
+    except Exception as e:
+        log(f"{which}: could not read the market calendar ({e}); checking anyway")
+    titles = sent_titles()
+    if titles is None:
+        log(f"{which}: could not read the push history")
+        return 1
+    day = f"{now:%a %b} {now.day}"
+    if which == "check-morning":
+        expected = {"Yahoo alert (NQ)": f"ORB {day}:", "Alpaca bot (QQQ)": f"ORB QQQ {day}:"}
+        missing = [name for name, prefix in expected.items()
+                   if not any(t.startswith(prefix) and not t.endswith(": result") for t in titles)]
+    else:
+        missing = [] if f"ORB QQQ {day}: result" in titles else ["Alpaca end-of-day result"]
+    if missing:
+        log(f"{which}: MISSING {missing}")
+        push(f"ORB PROBLEM {day}: {which.split('-')[1]} message missing",
+             "No message today from: " + ", ".join(missing) + ". The job may not have run. Tell Claude to check.",
+             "rotating_light")
+    else:
+        log(f"{which}: all expected messages were sent")
+    return 0
+
+
 def main():
     group = sys.argv[1] if len(sys.argv) > 1 else ""
+    if group in ("check-morning", "check-close"):
+        return check(group)
     if group not in GROUPS:
         print(__doc__)
         return 2
