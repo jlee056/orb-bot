@@ -1,0 +1,8 @@
+# Pinned packages for the scheduled GitHub Actions jobs (forward log and alert).
+# The broker library is left out on purpose: these jobs never place orders.
+yfinance==1.6.0
+curl_cffi==0.16.1
+pandas==3.0.3
+numpy==2.4.4
+matplotlib==3.11.2
+python-dotenv==1.2.2
