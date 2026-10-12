@@ -334,9 +334,46 @@ The only QQQ history available without an account is 60 days of 5-minute bars. O
 - Alpaca's paper fills do not model slippage or market impact, so results will look a little better than real trading.
 - Not yet run against the real Alpaca API. Everything above used the stand-in broker.
 
+## 2026-10-12 — First live day: account connected, and a missed morning
+
+**Connected and checked**
+
+- Alpaca paper account connected: active, $100,000 of practice money.
+- One-share live test: the bracket order was accepted, the buy filled, the stop and target became active, the flatten closed it, and the account ended flat. A second order with the same ID was refused, which is the one-order-per-day guard working. The fill took 100 seconds, which is slow.
+- Multi-year QQQ backtest with the frozen settings, on Alpaca's consolidated 1-minute data:
+
+| Year | Trades | Win rate | Avg R | Profit at $75 risk |
+|---|---|---|---|---|
+| 2020 | 59 | 59% | +0.02 | $94 |
+| 2021 | 67 | 60% | -0.02 | -$82 |
+| 2022 | 33 | 76% | +0.29 | $714 |
+| 2023 | 74 | 68% | +0.18 | $976 |
+| 2024 | 74 | 65% | +0.10 | $516 |
+| 2025 | 73 | 58% | +0.05 | $258 |
+| 2026 (to Oct 9) | 52 | 60% | +0.05 | $204 |
+| All | 432 | 63% | +0.08 | $2,680 |
+
+Positive in six of seven years, with a profit factor of 1.25 and a largest drawdown of $684. 2020 to 2022 were never used to choose the settings, so this is a real out-of-sample check. The edge is smaller than on NQ futures (+0.13 R), and at a $5,000 cash size the dollar amounts are about one sixth of these.
+
+**What went wrong**
+
+GitHub did not start any of the scheduled jobs. The morning alert and the paper-entry job were both due at 9:45 AM ET and never ran; the repository's history shows no scheduled run at all. GitHub's scheduler is documented to start jobs late or drop them under load, and these workflows were new and had been edited several times that morning. By the time it was noticed, the 10:30 to 12:00 entry window had passed.
+
+Replaying the morning afterwards: QQQ had no breakout, so no trade was missed, only the "no trade" notification.
+
+**What changed so it cannot depend on one scheduler again**
+
+- `watchdog.py` runs on an always-on PC through Windows Task Scheduler. Every 15 minutes through the morning (and at intervals before the close and in the evening) it checks whether today's job has started and starts it if not.
+- Each workflow now has two or three start times.
+- Starting a job twice is harmless. Notifications are send-once, checked against the alert topic's recent history. The entry job exits if today's order ID already exists at the broker. Every checkout uses the newest commit, so a later start sees the row an earlier one logged.
+
+**A difference to watch**
+
+The live bot reads Alpaca's free IEX feed, which is one exchange. The backtest used consolidated data. The opening range can differ by a few cents between the two, so a live day can trigger or size slightly differently from the backtest. Each logged row stores what the engine expected on the same data the bot saw.
+
 ## Next
 
-1. Create the Alpaca paper account, run the live checks, and run the multi-year QQQ backtest.
+1. Confirm the first full scheduled day (alert, entry, close, log) runs without help.
 2. Let the forward record and the paper record run. Compare each with the backtest after 20 or more trades.
 3. Fill in the 2026 event calendar and test whether event days matter.
 4. Revisit funding only if the records hold up.

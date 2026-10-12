@@ -182,8 +182,8 @@ The `vix` column lets you analyze which VIX environments produce the best result
 - [x] First live breakout detected (order rejected: account has no futures permission)
 - [x] 800-day backtest with costs; settings retuned from it
 - [x] Daily forward run on delayed data, no broker ([forward record](docs/FORWARD.md))
-- [x] Paper-trading bot for an Alpaca practice account on QQQ built and tested offline ([paper record](docs/PAPER.md)); waiting on API keys
-- [ ] Multi-year QQQ backtest (needs the Alpaca keys for data)
+- [x] Paper-trading bot for an Alpaca practice account on QQQ live since 2026-10-12 ([paper record](docs/PAPER.md))
+- [x] Multi-year QQQ backtest: 432 trades, 63% wins, +0.08 avg R (2020 to 2026)
 - [ ] 20+ forward signals compared with the backtest
 - [ ] First paper fill through IBKR (needs a funded account)
 
@@ -205,6 +205,7 @@ The `vix` column lets you analyze which VIX environments produce the best result
 - `alpaca_io.py` — the only file that talks to Alpaca; paper trading is hard-coded, with no live switch
 - `paper_report.py` — rebuilds `docs/PAPER.md` and its chart from `paper/alpaca_trades.csv`
 - `.github/workflows/` — runs the forward and paper-trading jobs on GitHub's servers every weekday
+- `watchdog.py` — backup trigger run by Windows Task Scheduler; starts a GitHub job if its scheduled run has not begun
 - `docs/LOGBOOK.md` — the project logbook; `docs/charts/`, `docs/data/` — its charts and tables
 - `setup_guide.md` — IBKR and TWS setup walkthrough
 - `trade_log.csv` — auto-generated trade journal (git-ignored)
