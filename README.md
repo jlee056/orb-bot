@@ -6,7 +6,7 @@
 ![Python](https://img.shields.io/badge/python-3.9%2B-blue)
 ![Broker](https://img.shields.io/badge/broker-Interactive%20Brokers-red)
 
-**[Read the logbook](docs/LOGBOOK.md)** for the full build history, the 800-day backtest, and every chart. **[Forward record](docs/FORWARD.md)**: what the bot would have done each day since the settings were frozen, updated automatically after every close.
+**[Read the logbook](docs/LOGBOOK.md)** for the full build history, the 800-day backtest, and every chart. **[Forward record](docs/FORWARD.md)**: what the bot would have done each day since the settings were frozen, updated automatically after every close. **[Paper trading record](docs/PAPER.md)**: orders the bot places in an Alpaca practice account on QQQ.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/charts/equity-dark.png">
@@ -182,6 +182,8 @@ The `vix` column lets you analyze which VIX environments produce the best result
 - [x] First live breakout detected (order rejected: account has no futures permission)
 - [x] 800-day backtest with costs; settings retuned from it
 - [x] Daily forward run on delayed data, no broker ([forward record](docs/FORWARD.md))
+- [x] Paper-trading bot for an Alpaca practice account on QQQ built and tested offline ([paper record](docs/PAPER.md)); waiting on API keys
+- [ ] Multi-year QQQ backtest (needs the Alpaca keys for data)
 - [ ] 20+ forward signals compared with the backtest
 - [ ] First paper fill through IBKR (needs a funded account)
 
@@ -199,7 +201,10 @@ The `vix` column lets you analyze which VIX environments produce the best result
 - `forward_run.py` — after each close, replays the day on delayed Yahoo data and appends to `forward/forward_log.csv`
 - `forward_report.py` — rebuilds `docs/FORWARD.md` and its chart from that log
 - `forward_alert.py` — morning phone alert (ntfy) when a breakout fires
-- `.github/workflows/` — runs the two forward jobs on GitHub's servers every weekday
+- `alpaca_bot.py` — places the bot's trades in an Alpaca **paper** account on QQQ (morning entry, afternoon close and record)
+- `alpaca_io.py` — the only file that talks to Alpaca; paper trading is hard-coded, with no live switch
+- `paper_report.py` — rebuilds `docs/PAPER.md` and its chart from `paper/alpaca_trades.csv`
+- `.github/workflows/` — runs the forward and paper-trading jobs on GitHub's servers every weekday
 - `docs/LOGBOOK.md` — the project logbook; `docs/charts/`, `docs/data/` — its charts and tables
 - `setup_guide.md` — IBKR and TWS setup walkthrough
 - `trade_log.csv` — auto-generated trade journal (git-ignored)

@@ -170,6 +170,7 @@ class P:
     max_contracts: int = 3
     oversize: str = "min1"         # "min1" trade 1 contract even if over budget | "skip"
     oversize_tol: float = 1.0      # with "skip": allow 1-contract risk up to tol * budget
+    mult: float = MULT             # dollars per point per unit: 2.0 for MNQ, 1.0 for one share
     monthly_cap: float = 0.0       # dollars of loss that halt the month; 0 = off
     monthly_net: bool = True       # True: cap on net month P&L | False: cap on summed losing trades (old bot)
 
@@ -328,7 +329,7 @@ def run(days, p):
         r = simulate(d, p)
         if r is None:
             continue
-        r["qty"], r["usd"] = 0, 0.0
+        r["qty"], r["usd"], r["risk_usd"] = 0, 0.0, 0.0
         ym = (d.date.year, d.date.month)
         if ym != month:
             month, month_loss = ym, 0.0
@@ -336,7 +337,7 @@ def run(days, p):
             if p.monthly_cap and month_loss >= p.monthly_cap:
                 r.update(why="monthly_cap", dir=0, pts=0.0)
             else:
-                risk_usd = r["risk"] * MULT
+                risk_usd = r["risk"] * p.mult
                 qty = min(math.floor(budget / risk_usd), p.max_contracts)
                 if qty < 1:
                     qty = 1 if (p.oversize == "min1" or risk_usd <= p.oversize_tol * budget) else 0
@@ -344,7 +345,8 @@ def run(days, p):
                     r.update(why="over_risk", dir=0, pts=0.0)
                 else:
                     r["qty"] = qty
-                    r["usd"] = r["pts"] * MULT * qty - p.commission * qty
+                    r["usd"] = r["pts"] * p.mult * qty - p.commission * qty
+                    r["risk_usd"] = risk_usd * qty
                     if p.monthly_net:
                         month_loss -= r["usd"]
                     elif r["usd"] < 0:
@@ -374,7 +376,7 @@ def stats(res):
         "avg$": round(float(usd.mean()), 1),
         "maxDD$": round(dd),
         "worst$": round(float(usd.min())),
-        "avgRisk$": round(float((t["risk"] * MULT * t["qty"]).mean())),
+        "avgRisk$": round(float(t["risk_usd"].mean())),
     }
 
 

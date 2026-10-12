@@ -34,7 +34,8 @@ TZ = "America/New_York"
 COLUMNS = ["date", "config_id", "bar_min", "range_high", "range_low", "range_pct", "flags", "outcome",
            "entry", "stop", "target", "exit", "pts", "risk_pts", "R", "usd_1c", "over_risk", "logged_at"]
 # Settings that describe the account, not the strategy, are left out of the hash.
-ACCOUNT_FIELDS = {"account", "risk_pct", "max_contracts", "oversize", "oversize_tol", "monthly_cap", "monthly_net"}
+ACCOUNT_FIELDS = {"account", "risk_pct", "max_contracts", "oversize", "oversize_tol", "monthly_cap", "monthly_net",
+                  "mult"}
 
 
 def strategy_params():

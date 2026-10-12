@@ -92,5 +92,6 @@ jobs:
             echo "Nothing new to commit."
           else
             git commit -m "Forward log: $(TZ=America/New_York date +%F)"
+            git pull --rebase
             git push
           fi

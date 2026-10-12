@@ -24,7 +24,8 @@ OUTCOMES = {"target": "Hit target", "stop": "Hit stop", "eod": "Closed at end of
             "no_room": "No room to target"}
 
 
-def chart(t, exp_r, sd_r, theme):
+def chart(t, exp_r, sd_r, theme, name="forward", title="Forward record against what the backtest predicts",
+          label="Forward record", short="Forward"):
     mc.T = mc.THEMES[theme]
     T = mc.T
     mc.style()
@@ -32,7 +33,7 @@ def chart(t, exp_r, sd_r, theme):
     fig, ax = plt.subplots(figsize=(10, 4.6))
     fig.subplots_adjust(left=0.075, right=0.745, top=0.78, bottom=0.14)
     ax.xaxis.set_major_locator(matplotlib.ticker.MaxNLocator(integer=True))
-    mc.titled(fig, "Forward record against what the backtest predicts",
+    mc.titled(fig, title,
               "Cumulative result in R (1 R = the amount risked on a trade), by signal number")
     xs = np.arange(0, max(n, NEEDED) + 1)
     ax.fill_between(xs, exp_r * xs - 2 * sd_r * np.sqrt(xs), exp_r * xs + 2 * sd_r * np.sqrt(xs),
@@ -40,8 +41,8 @@ def chart(t, exp_r, sd_r, theme):
     ax.plot(xs, exp_r * xs, color=T["muted"], lw=2, label="Backtest: average")
     cum = np.concatenate([[0], t["R"].cumsum().to_numpy()])
     ax.plot(np.arange(n + 1), cum, color=T["s1"], lw=2, marker="o", ms=6, mec=T["surface"], mew=1.5,
-            label="Forward record")
-    ax.annotate(f"Forward: {cum[-1]:+.2f} R\nafter {n} signal{'s' if n != 1 else ''}", (n, cum[-1]),
+            label=label)
+    ax.annotate(f"{short}: {cum[-1]:+.2f} R\nafter {n} signal{'s' if n != 1 else ''}", (n, cum[-1]),
                 xytext=(10, -22), textcoords="offset points", fontsize=9.5, va="top", color=T["text"],
                 annotation_clip=False)
     ax.axhline(0, color=T["muted"], lw=1)
@@ -49,7 +50,7 @@ def chart(t, exp_r, sd_r, theme):
     ax.set_xlabel("Signals taken")
     ax.set_ylabel("Cumulative R")
     ax.legend(loc="upper left", bbox_to_anchor=(1.01, 0.55), fontsize=9.5)
-    mc.save(fig, "forward", theme)
+    mc.save(fig, name, theme)
 
 
 def main():

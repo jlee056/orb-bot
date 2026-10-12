@@ -37,7 +37,40 @@ def params_from_config(paper=False):
     )
 
 
+def qqq():
+    """The frozen settings on QQQ shares (what the Alpaca paper bot trades). No retuning."""
+    import glob
+    import os
+
+    import alpaca_io as A
+    from alpaca_bot import RISK_USD, qqq_params
+    p = E.replace(qqq_params(), account=RISK_USD / 0.015, risk_pct=0.015, max_contracts=10 ** 6)
+    files = sorted(glob.glob(os.path.join(E.DATA, "alpaca", "QQQ_1min_*.csv")))
+    vix = E.load_vix()
+    if files:
+        df = pd.concat(pd.read_csv(f, index_col=0, parse_dates=True) for f in files).sort_index()
+        days = E.prepare(df, vix)
+        groups = {str(y): [d for d in days if d.date.year == y] for y in sorted({d.date.year for d in days})}
+        src = f"Alpaca 1-minute bars, {days[0].date} to {days[-1].date}"
+    else:
+        days = E.prepare(A.YahooData().bars(5, "2000-01-01"), vix)
+        groups = {"last 60 days": days}
+        src = "yfinance 5-minute bars, last 60 days only (run get_data.py --qqq for the full history)"
+    cols = ["days", "n", "win%", "avgR", "t", "PF", "usd", "maxDD$", "worst$", "avgRisk$"]
+    pd.set_option("display.width", 200)
+    print(f"QQQ, frozen settings: range {p.or_min} min, stop {p.stop_mode}, target {p.target_k} x range")
+    print(f"Data: {src}")
+    print(f"Sized to risk ${RISK_USD:.0f} per trade. Costs: 2 cents slippage per market fill, no commission.\n")
+    table = {k: E.stats(E.run(v, p)) for k, v in groups.items() if v}
+    if len(groups) > 1:
+        table["ALL"] = E.stats(E.run(days, p))
+    print(pd.DataFrame(table).T.reindex(columns=cols).to_string())
+    print("\nFor comparison, NQ futures on the same settings: 216 trades, 65% wins, +0.13 avg R, PF 1.48.")
+
+
 def main():
+    if "--qqq" in sys.argv:
+        return qqq()
     paper = "--paper" in sys.argv
     if "--refresh" in sys.argv:
         E.load_yf(refresh=True)

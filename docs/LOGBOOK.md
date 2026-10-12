@@ -278,11 +278,68 @@ The backtest says what would have happened. The forward run records what does ha
 - Running the log twice adds no rows the second time.
 - The alert, stepped minute by minute through last week, decided the same way as the log on all five days.
 
+## 2026-10-12 — Paper trading with real order handling (Alpaca, QQQ)
+
+The forward log records decisions but sends no orders. The next step up is a broker's practice account, where orders are really submitted, filled and cancelled, with practice money.
+
+**Choosing where**
+
+| Option | Result |
+|---|---|
+| IBKR paper | Needs the $2,000 funded account (the 2026-06-26 problem) |
+| MetaTrader 5 demo | US-regulated MT5 brokers leave index CFDs out for US residents, demos included |
+| Tradovate demo | Real MNQ, but 14 days only |
+| TopstepX practice | Needs a paid account and an API subscription |
+| **Alpaca paper** | Free, email signup, no funding, official Python API, free real-time IEX prices |
+
+Alpaca has no futures, so the bot trades **QQQ**, the Nasdaq-100 fund. It follows the same index as MNQ, but it is a different instrument: it only trades in regular hours, and its free price feed comes from one exchange (IEX).
+
+**How it works**
+
+- `alpaca_bot.py entry` watches QQQ from 10:30 to 12:00 ET and, on a breakout, sends one bracket order: market entry, stop at the range midpoint, limit target at half the range above the high.
+- `alpaca_bot.py close` flattens anything still open 10 minutes before the close and writes the day to [`paper/alpaca_trades.csv`](../paper/alpaca_trades.csv). The [paper record](PAPER.md) page is rebuilt from that.
+- The decision to trade comes from `orb_engine.simulate`, the same function the backtest and the forward log use.
+- Each day's row also stores what the engine expected (`sim_outcome`, `sim_R`), so the broker's fills can be checked against it. A day where the engine traded and no order went out is logged as `missed`.
+
+**Sizing, two ways**
+
+One MNQ contract was too big for the risk budget. Shares fix that: the bot buys enough QQQ to risk about $75, which is 30 to 50 shares, roughly $25,000 to $35,000 of stock. That fits the $100,000 practice account but not a real $5,000 one. So every trade is recorded twice: as placed, and as it would have been with $5,000 of cash and no borrowing (about 6 shares, around $10 at risk).
+
+**Safety**
+
+- `alpaca_io.py` always builds the trading client with `paper=True`. There is no live setting to flip.
+- One order per day, enforced by a dated order ID that Alpaca rejects if repeated, and by checking for an existing position first.
+- Half days are skipped.
+
+**Checks so far (no account yet, so a stand-in broker and Yahoo prices)**
+
+Replaying the week of 2026-10-05:
+
+| Date | Bot | Shares | Result | Engine expected |
+|---|---|---|---|---|
+| Oct 5 | Order at 10:59 | 30 | Target, +0.97 R | Target, +0.95 R |
+| Oct 6 | Order at 10:54 | 48 | Stop, -1.00 R | Stop, -1.01 R |
+| Oct 7 | Order at 11:14 | 44 | Target, +0.95 R | Target, +0.94 R |
+| Oct 8 | No breakout | | | No breakout |
+| Oct 9 | No breakout | | | No breakout |
+
+These are the same three trading days and the same outcomes as NQ futures that week.
+
+**An unflattering first number**
+
+The only QQQ history available without an account is 60 days of 5-minute bars. On those, the frozen settings made 14 trades, won half, and averaged -0.14 R. NQ futures over roughly the same weeks made 8 trades and averaged +0.27 R. Fourteen trades settle nothing either way, but it is a reminder that QQQ is not NQ. The multi-year QQQ backtest (`python get_data.py --qqq`, then `python backtest.py --qqq`) needs the Alpaca keys for data and is the next thing to run.
+
+**Known limits**
+
+- Alpaca's paper fills do not model slippage or market impact, so results will look a little better than real trading.
+- Not yet run against the real Alpaca API. Everything above used the stand-in broker.
+
 ## Next
 
-1. Let the forward record run. Compare it with the backtest after 20 or more signals.
-2. Fill in the 2026 event calendar and test whether event days matter.
-3. Revisit funding only if the forward record holds up.
+1. Create the Alpaca paper account, run the live checks, and run the multi-year QQQ backtest.
+2. Let the forward record and the paper record run. Compare each with the backtest after 20 or more trades.
+3. Fill in the 2026 event calendar and test whether event days matter.
+4. Revisit funding only if the records hold up.
 
 ## Data and sources
 

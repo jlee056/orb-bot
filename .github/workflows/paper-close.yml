@@ -1,0 +1,101 @@
+name: Paper trade close and record (Alpaca, QQQ)
+
+# Flattens any QQQ position 10 minutes before the close in the Alpaca PAPER
+# account, records the day, and commits the record. The script sleeps until the
+# right time on the Eastern clock, so a late or early start is harmless.
+#
+# Two jobs on purpose: "build" installs and runs Python with a read-only token,
+# "publish" holds the write token and runs no installed code.
+on:
+  schedule:
+    - cron: "30 18 * * 1-5"   # 2:30 PM ET in summer, 1:30 PM ET in winter
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: paper-close
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262   # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065   # v5.6.0
+        with:
+          python-version: "3.13"
+      - run: pip install -r requirements-paper.txt
+      - name: Flatten and record the day
+        env:
+          ALPACA_API_KEY: ${{ secrets.ALPACA_API_KEY }}
+          ALPACA_SECRET_KEY: ${{ secrets.ALPACA_SECRET_KEY }}
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+        run: python -u alpaca_bot.py close
+      - name: Rebuild the paper page
+        run: python paper_report.py
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02   # v4.6.2
+        with:
+          name: paper-record
+          retention-days: 3
+          path: |
+            paper/alpaca_trades.csv
+            docs/PAPER.md
+            docs/charts/paper.png
+            docs/charts/paper-dark.png
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262   # v4.4.0
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093   # v4.3.0
+        with:
+          name: paper-record
+          path: ${{ runner.temp }}/record
+      # The build job is the less trusted side. Take only the four expected files
+      # from its output, by exact name, and check each one before it enters the repo.
+      - name: Copy the expected files only
+        env:
+          RECORD: ${{ runner.temp }}/record
+        run: |
+          set -euo pipefail
+          HEADER="date,config_id,source,outcome,shares,entry,stop,target,exit,profit,R,shares_5k,profit_5k,sim_outcome,sim_R,logged_at"
+          for f in paper/alpaca_trades.csv docs/PAPER.md docs/charts/paper.png docs/charts/paper-dark.png; do
+            src="$RECORD/$f"
+            if [ ! -e "$src" ] && [ ! -L "$src" ]; then
+              continue                      # charts do not exist until the first trade
+            fi
+            if [ -L "$src" ] || [ ! -f "$src" ]; then
+              echo "::error::$f is not a regular file"; exit 1
+            fi
+            if [ "$(stat -c %s "$src")" -gt 5000000 ]; then
+              echo "::error::$f is larger than 5 MB"; exit 1
+            fi
+            if [ "$f" = "paper/alpaca_trades.csv" ] && [ "$(head -n 1 "$src" | tr -d '\r')" != "$HEADER" ]; then
+              echo "::error::alpaca_trades.csv has an unexpected header"; exit 1
+            fi
+            mkdir -p "$(dirname "$f")"
+            cp --no-dereference "$src" "$f"
+          done
+      - name: Commit the record
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add paper/alpaca_trades.csv docs/PAPER.md
+          git add docs/charts/paper.png docs/charts/paper-dark.png 2>/dev/null || true
+          if git diff --cached --quiet; then
+            echo "Nothing new to commit."
+          else
+            git commit -m "Paper trades: $(TZ=America/New_York date +%F)"
+            git pull --rebase
+            git push
+          fi

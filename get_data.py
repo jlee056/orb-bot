@@ -1,6 +1,7 @@
 """Download the free price data the backtest uses into data/ (git-ignored, ~95 MB).
 
-Run:  python get_data.py
+Run:  python get_data.py          NQ/MNQ futures data (no account needed)
+      python get_data.py --qqq    QQQ 1-minute history from Alpaca (needs the paper API keys)
 
 Sources:
   Kaggle  tgtanalytics/nq-futures-1min-bar-2022-2025   NQ 1-minute bars, Dec 2022 to Dec 2025
@@ -8,6 +9,7 @@ Sources:
 The most recent ~60 days come from yfinance and are fetched by the backtest itself.
 """
 import os
+import sys
 import urllib.request
 import zipfile
 
@@ -31,7 +33,37 @@ def fetch(url, dest):
             f.write(chunk)
 
 
+def qqq(first_year=2020):
+    """1-minute QQQ bars from Alpaca, one CSV per year in data/alpaca/. Needs the paper API keys."""
+    import pandas as pd
+
+    import alpaca_io as A
+    if not A.have_keys():
+        print("Set ALPACA_API_KEY and ALPACA_SECRET_KEY in .env first.")
+        return
+    src = A.AlpacaData()
+    os.makedirs(os.path.join(DATA, "alpaca"), exist_ok=True)
+    now = pd.Timestamp.now(tz=A.TZ).tz_localize(None)
+    for year in range(first_year, now.year + 1):
+        dest = os.path.join(DATA, "alpaca", f"QQQ_1min_{year}.csv")
+        if os.path.isfile(dest) and year < now.year:
+            print("already have", os.path.relpath(dest, HERE))
+            continue
+        end = min(pd.Timestamp(year + 1, 1, 1), now - pd.Timedelta(minutes=20))
+        try:
+            df, feed = src.bars(1, pd.Timestamp(year, 1, 1), end, feed="sip"), "sip"
+        except Exception as e:   # plan does not include consolidated history: fall back to IEX
+            print(f"  {year}: consolidated feed refused ({str(e)[:80]}); using IEX")
+            df, feed = src.bars(1, pd.Timestamp(year, 1, 1), end), "iex"
+        if len(df):
+            df.to_csv(dest)
+        print(f"{year}: {len(df):,} bars ({feed})")
+    print("done. Next: python backtest.py --qqq")
+
+
 def main():
+    if "--qqq" in sys.argv:
+        return qqq()
     zpath = os.path.join(DATA, "kaggle", "nq.zip")
     fetch(KAGGLE_URL, zpath)
     csv = os.path.join(DATA, "kaggle", "Dataset_NQ_1min_2022_2025.csv")
