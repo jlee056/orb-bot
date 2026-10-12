@@ -339,7 +339,7 @@ The only QQQ history available without an account is 60 days of 5-minute bars. O
 **Connected and checked**
 
 - Alpaca paper account connected: active, $100,000 of practice money.
-- One-share live test: the bracket order was accepted, the buy filled, the stop and target became active, the flatten closed it, and the account ended flat. A second order with the same ID was refused, which is the one-order-per-day guard working. The fill took 100 seconds, which is slow. It bought 1 share at $747.83 and sold at $747.86, a 3-cent profit, leaving the account at $100,000.03. This was a plumbing test with its own order ID, so it is not counted in the paper trading record.
+- One-share live test: the bracket order was accepted, the buy filled, the stop and target became active, the flatten closed it, and the account ended flat. A second order with the same ID was refused, which is the one-order-per-day guard working. The fill took 100 seconds, which is slow. It bought 1 share at $747.83 and sold at $747.86, a 3-cent profit, leaving the account at $100,000.03. This was a connection test with its own order ID. It is listed on the [paper record](PAPER.md) page under "Other orders in this account", together with the first test order that was cancelled before filling, and it is kept out of the strategy's win rate and profit figures.
 - Multi-year QQQ backtest with the frozen settings, on Alpaca's consolidated 1-minute data:
 
 | Year | Trades | Win rate | Avg R | Profit at $75 risk |

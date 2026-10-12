@@ -12,6 +12,7 @@ from forward_report import BACKTEST_TRADES, NEEDED, chart
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.join(HERE, "docs", "PAPER.md")
+OTHER = os.path.join(HERE, "paper", "other_orders.csv")   # orders in the account that the strategy did not choose
 
 OUTCOMES = {"target": "Hit target", "stop": "Hit stop", "eod": "Closed before the bell",
             "no_breakout": "No breakout", "downside_break": "Broke down first", "filtered": "Skipped (trend filter)",
@@ -79,6 +80,21 @@ def main():
                 cells += [""] * 8
             L.append("| " + " | ".join(cells) + " |")
         L += [""]
+    if os.path.isfile(OTHER):
+        other = pd.read_csv(OTHER, dtype=str).fillna("")
+        if len(other):
+            total = pd.to_numeric(other["profit"], errors="coerce").sum()
+            L += ["## Other orders in this account", "",
+                  "Everything else that happened in the account: connection tests and anything not placed by the strategy. "
+                  "These are logged here so the record is complete, but they are **not** strategy trades and are "
+                  "left out of the win rate and profit figures above.", "",
+                  "| Date | Time (ET) | Kind | Shares | Bought | Sold | Profit | What it was |",
+                  "|---|---|---|---|---|---|---|---|"]
+            for r in other.iloc[::-1].itertuples():
+                profit = f"${float(r.profit):+,.2f}" if r.profit else ""
+                L.append(f"| {r.date} | {r.time_et} | {r.kind.title()} | {r.shares} | {r.buy} | {r.sell} | {profit} | {r.note} |")
+            L += ["", f"Profit from these orders: ${total:+,.2f}. Full list: "
+                      "[`paper/other_orders.csv`](../paper/other_orders.csv).", ""]
     L += ["Full log: [`paper/alpaca_trades.csv`](../paper/alpaca_trades.csv). The `sim_outcome` and `sim_R` columns "
           "there show what the engine expected for the same day, so broker fills can be checked against it. "
           "Background: [logbook](LOGBOOK.md). Futures forward record: [FORWARD.md](FORWARD.md).", ""]

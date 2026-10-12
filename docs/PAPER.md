@@ -8,4 +8,15 @@ Paper fills are optimistic: Alpaca's simulator does not model slippage or market
 
 No sessions logged yet.
 
+## Other orders in this account
+
+Everything else that happened in the account: connection tests and anything not placed by the strategy. These are logged here so the record is complete, but they are **not** strategy trades and are left out of the win rate and profit figures above.
+
+| Date | Time (ET) | Kind | Shares | Bought | Sold | Profit | What it was |
+|---|---|---|---|---|---|---|---|
+| 2026-10-12 | 09:32 | Test | 1 | 747.83 | 747.86 | $+0.03 | Connection test. Buy filled after 100 seconds, stop and target went live, closed by the test script. First fill in the account. |
+| 2026-10-12 | 09:31 | Test | 1 |  |  |  | Connection test. Bracket order accepted, then cancelled after 8 seconds before it filled. |
+
+Profit from these orders: $+0.03. Full list: [`paper/other_orders.csv`](../paper/other_orders.csv).
+
 Full log: [`paper/alpaca_trades.csv`](../paper/alpaca_trades.csv). The `sim_outcome` and `sim_R` columns there show what the engine expected for the same day, so broker fills can be checked against it. Background: [logbook](LOGBOOK.md). Futures forward record: [FORWARD.md](FORWARD.md).
