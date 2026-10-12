@@ -46,6 +46,10 @@ MAX_RANGE_PCT     = 0.008  # skip day if opening range > 0.8% of price (choppy d
 # good trades or made no difference, so they are OFF: they are still logged in would_skip
 # but never block a trade. Flip to True to enforce one again.
 FILTER_FRIDAY = False
+# Scheduled-news days (events.py). Tested 2026-10-12 on 432 QQQ and 216 NQ trades: days with CPI, PPI,
+# jobs, PCE, GDP or Mag-7 earnings were no worse than other days, so they are logged, not skipped.
+# FOMC decision days were clearly worse (2 wins in 8 trades); a separate FOMC skip is under review.
+FILTER_EVENT_DAYS = False
 FILTER_GAP    = False
 FILTER_RANGE  = False
 VIX_MIN      = 0       # low-VIX skip disabled (was 13): low-VIX days were above average

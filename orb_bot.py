@@ -472,7 +472,9 @@ def main():
     # --- Filter: high-impact event day (CPI/NFP/PCE/GDP/FOMC/earnings) ---
     todays_events = events.get_events_today(today)
     if todays_events:
-        if gate(f"event_day({','.join(todays_events)})"):
+        if not config.FILTER_EVENT_DAYS:
+            note(f"event_day({','.join(todays_events)})")
+        elif gate(f"event_day({','.join(todays_events)})"):
             log_trade(today, None, None, None, skipped=f"event_day({','.join(todays_events)})",
                       would_skip=";".join(would_skip))
             return
