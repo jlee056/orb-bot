@@ -2,3 +2,4 @@ ib_insync
 pandas
 python-dotenv
 yfinance>=0.2
+matplotlib>=3.8

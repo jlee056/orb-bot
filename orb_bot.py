@@ -56,6 +56,9 @@ def get_market_conditions():
 
         # 90 days of daily bars — a 20-EMA needs ~60-90 bars to stabilize (30d was a bug).
         nq_ohlc = yf.download("NQ=F", period="90d", progress=False, multi_level_index=False)
+        # Completed sessions only: drop today's still-forming bar so EMA/ATR match the backtest.
+        if nq_ohlc.index[-1].date() >= datetime.now().date():
+            nq_ohlc = nq_ohlc.iloc[:-1]
         nq_daily = nq_ohlc["Close"]
         ema20 = nq_daily.ewm(span=20, adjust=False).mean()
         nq_above_ema = float(nq_daily.iloc[-1]) > float(ema20.iloc[-1])
@@ -80,7 +83,7 @@ def get_market_conditions():
         except Exception:
             atr = None
 
-        prev_close = float(nq_daily.iloc[-2])  # yesterday's close, not today's partial bar
+        prev_close = float(nq_daily.iloc[-1])  # last completed session's close
         nq_intraday = yf.download("NQ=F", period="1d", interval="1m", progress=False, multi_level_index=False)
         today_open = float(nq_intraday["Open"].iloc[0])
         gap_pct = (today_open - prev_close) / prev_close
@@ -121,12 +124,11 @@ def check_daily_limits():
                 pnl = float(pnl_str)
             except ValueError:
                 continue
-            if pnl >= 0:
-                continue
+            # Net P&L: wins offset losses (summing losses alone halted the month after 1-2 trades).
             if row.get("date", "").startswith(today):
-                daily_loss += abs(pnl)
+                daily_loss -= pnl
             if row.get("date", "").startswith(month):
-                monthly_loss += abs(pnl)
+                monthly_loss -= pnl
 
     if daily_loss >= config.DAILY_LOSS_LIMIT:
         return True, f"daily_limit_hit (${daily_loss:.2f} >= ${config.DAILY_LOSS_LIMIT})"
@@ -174,13 +176,13 @@ def get_effective_risk():
 # ---------------------------------------------------------------------------
 
 def collect_opening_range(contract):
-    """Request 1-min bars for the first 30 minutes and return (high, low, range_pct)."""
+    """Request 1-min bars for the opening range (9:30 + OPENING_RANGE_MIN) and return (high, low, range_pct)."""
     print(f"[{ts()}] Collecting opening range bars...")
 
     bars = ib.reqHistoricalData(
         contract,
         endDateTime="",
-        durationStr="3600 S",   # 60 min of history to safely cover the 30-min window
+        durationStr=f"{(config.OPENING_RANGE_MIN + 30) * 60} S",   # range window plus a 30-min margin
         barSizeSetting="1 min",
         whatToShow="TRADES",
         useRTH=False,
@@ -190,8 +192,14 @@ def collect_opening_range(contract):
     if not bars:
         raise RuntimeError("No bar data returned. Check market hours and data permissions.")
 
-    # Last 30 bars of the 60-min window = 9:30–9:59 AM ET
-    opening_bars = bars[-config.OPENING_RANGE_MIN:]
+    # Bars that start inside 9:30 .. 9:30 + OPENING_RANGE_MIN (ET). Falls back to the
+    # last N bars if the bar timestamps can't be read as clock times.
+    start_min = 9 * 60 + 30
+    end_min = start_min + config.OPENING_RANGE_MIN
+    opening_bars = [b for b in bars
+                    if hasattr(b.date, "hour") and start_min <= b.date.hour * 60 + b.date.minute < end_min]
+    if len(opening_bars) < config.OPENING_RANGE_MIN * 0.9:
+        opening_bars = bars[-config.OPENING_RANGE_MIN:]
     orb_high = max(b.high for b in opening_bars)   # top wick
     orb_low  = min(b.low  for b in opening_bars)   # bottom wick
     mid      = (orb_high + orb_low) / 2
@@ -223,7 +231,7 @@ def watch_for_breakout(contract, orb_high, orb_low):
        "no_breakout"     — entry cutoff reached with no breakout.
     Both no-trade outcomes are genuine signal-absence, not filter skips —
     there is no valid long entry, so paper mode does not override them."""
-    print(f"[{ts()}] Watching for breakout (long only, cutoff 11:00 AM)...")
+    print(f"[{ts()}] Watching for breakout (long only, cutoff {config.ENTRY_CUTOFF_HOUR}:00)...")
 
     while True:
         now = datetime.now().time()
@@ -318,8 +326,12 @@ def manage_position(contract, stop_order, entry, target, eod_time):
     target, move the stop to entry (breakeven) — exactly once. No trailing
     afterward (QuantCrawler: trailing reduced PnL)."""
     trigger = entry + config.BREAKEVEN_TRIGGER_RATIO * (target - entry)
-    moved_to_breakeven = False
-    print(f"[{ts()}] Managing position — breakeven trigger at {trigger:.2f} (stop->entry)...")
+    # BREAKEVEN_TRIGGER_RATIO = 0 turns the breakeven move off (bracket legs manage the exit).
+    moved_to_breakeven = config.BREAKEVEN_TRIGGER_RATIO <= 0
+    if moved_to_breakeven:
+        print(f"[{ts()}] Managing position — breakeven move off, holding for stop/target/EOD...")
+    else:
+        print(f"[{ts()}] Managing position — breakeven trigger at {trigger:.2f} (stop->entry)...")
 
     while datetime.now().time() < eod_time:
         ib.sleep(2)
@@ -438,9 +450,16 @@ def main():
         print(f"[{ts()}] Skipping — {reason}")
         return True
 
+    def note(reason):
+        """A filter that is switched off in config: record it, never skip."""
+        would_skip.append(f"off:{reason}")
+        print(f"[{ts()}] NOTE (filter off) — {reason}")
+
     # --- Filter: Friday ---
     if datetime.now().weekday() == 4:
-        if gate("friday"):
+        if not config.FILTER_FRIDAY:
+            note("friday")
+        elif gate("friday"):
             return
 
     # --- Filter: daily / monthly loss limit ---
@@ -492,7 +511,9 @@ def main():
         # --- Filter: gap too large ---
         if conditions["gap_pct"] > config.GAP_SKIP_PCT:
             reason = f"gap_too_large ({conditions['gap_pct']*100:.2f}% > {config.GAP_SKIP_PCT*100:.1f}%)"
-            if gate(reason):
+            if not config.FILTER_GAP:
+                note(reason)
+            elif gate(reason):
                 log_trade(today, None, None, None, skipped=reason, vix=vix, would_skip=";".join(would_skip))
                 return
 
@@ -513,11 +534,13 @@ def main():
     connect_tws()
     contract = get_mnq_contract()
 
-    # Wait until 10:00 AM for the 30-minute opening range to complete
-    orb_ready = time(10, 0)
+    # Wait until the opening range (9:30 + OPENING_RANGE_MIN) is complete
+    ready_min = 9 * 60 + 30 + config.OPENING_RANGE_MIN
+    orb_ready = time(ready_min // 60, ready_min % 60)
     now = datetime.now().time()
     if now < orb_ready:
-        print(f"[{ts()}] Waiting until 10:00 AM for 30-min opening range to form...")
+        print(f"[{ts()}] Waiting until {orb_ready.strftime('%H:%M')} for the "
+              f"{config.OPENING_RANGE_MIN}-min opening range to form...")
         wait_until(orb_ready)
 
     # Collect and validate opening range
@@ -525,7 +548,9 @@ def main():
 
     # --- Filter: range too wide (choppy day) ---
     if not range_is_valid(range_pct):
-        if gate("range_too_wide"):
+        if not config.FILTER_RANGE:
+            note("range_too_wide")
+        elif gate("range_too_wide"):
             log_trade(today, orb_high, orb_low, range_pct, skipped="range_too_wide", vix=vix,
                       would_skip=";".join(would_skip))
             ib.disconnect()
@@ -545,6 +570,16 @@ def main():
     stop   = compute_stop(entry, orb_high, orb_low, atr)
     target = orb_high + config.TARGET_RATIO * (orb_high - orb_low)
     qty    = calc_contracts(entry, stop, dollar_risk)
+
+    # --- Filter: one contract risks more than the budget allows ---
+    risk_1c = abs(entry - stop) * 2
+    if risk_1c > dollar_risk * config.MAX_RISK_OVERSHOOT:
+        reason = f"over_risk (1 contract ${risk_1c:.0f} > budget ${dollar_risk:.0f})"
+        if gate(reason):
+            log_trade(today, orb_high, orb_low, range_pct, skipped=reason, vix=vix,
+                      would_skip=";".join(would_skip))
+            ib.disconnect()
+            return
 
     parent_id, stop_order = place_bracket_order(contract, entry, stop, target, qty)
 

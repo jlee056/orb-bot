@@ -8,3 +8,7 @@ __pycache__/
 
 # legacy/archived trade logs (local only)
 trade_log_legacy*.csv
+/data/
+backtest_results.csv
+.claude/
+graphify-out/

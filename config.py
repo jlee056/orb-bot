@@ -28,31 +28,42 @@ RISK_PERCENT = 0.015   # Elder's 2% is the ceiling; pros operate at 0.5–1.5%
 # Risk controls
 MAX_CONTRACTS    = 3     # 1 contract per $1K–2K equity (prop firm standard at $5K)
 DAILY_LOSS_LIMIT = 150   # $150 = 3% of $5K; halt for the day if hit (Topstep standard)
-MONTHLY_LOSS_CAP = 300   # $300 = 6% of $5K; Elder's 6% rule — halt until manual reset
+MONTHLY_LOSS_CAP = 300   # $300 = 6% of $5K; Elder's 6% rule — halt until manual reset. Measured on NET month P&L.
+# 1-contract risk allowed as a multiple of the risk budget (ACCOUNT_SIZE * RISK_PERCENT).
+# One MNQ contract risks ~$130-310 on this setup, far above a $75 budget. Live mode skips
+# the trade when 1 contract would exceed budget * this; paper mode trades 1 and logs over_risk.
+MAX_RISK_OVERSHOOT = 1.0
 STREAK_THRESHOLD = 3     # consecutive losses before reducing size
 STREAK_RISK_MULT = 0.5   # halve risk% after streak threshold hit
 
 # Opening range
-OPENING_RANGE_MIN = 30     # 30-min ORB: 71.5% NQ continuation rate (6,142-day dataset)
+OPENING_RANGE_MIN = 60     # 60-min range: most consistent family in the 2023-2026 backtest (see README "Backtest")
 MAX_RANGE_PCT     = 0.008  # skip day if opening range > 0.8% of price (choppy day). In paper mode this only logs would_skip and still trades.
 
 # Pre-trade filters (checked via yfinance before market open)
-VIX_MIN      = 13      # skip if VIX below — too calm, 48% win rate below 13
+# 2023-2026 backtest (800 days, 1-min data): only the EMA trend filter helped, in every
+# setup tested, in-sample and out-of-sample. Friday, low-VIX, gap and range filters removed
+# good trades or made no difference, so they are OFF: they are still logged in would_skip
+# but never block a trade. Flip to True to enforce one again.
+FILTER_FRIDAY = False
+FILTER_GAP    = False
+FILTER_RANGE  = False
+VIX_MIN      = 0       # low-VIX skip disabled (was 13): low-VIX days were above average
 VIX_MAX      = 35      # skip if VIX above — April 2025 tariff spike hit 60 (danger zone)
 GAP_SKIP_PCT = 0.007   # skip long ORB if overnight gap-up exceeds 0.7% of prior close
 
 # EMA trend filter (longs only when NQ in a confirmed uptrend)
-EMA_DAYS_ABOVE_REQUIRED = 3   # require 3+ consecutive closes above 20-EMA before a long (anti-whipsaw, 2025 cross-check)
+EMA_DAYS_ABOVE_REQUIRED = 1   # prior close above the 20-EMA. 1 vs 3 days made no reliable difference; 1 keeps more trades.
 
 # Trade parameters
-TARGET_RATIO      = 1.0   # 2025 cross-check: median NQ max extension ~0.42× range
-ENTRY_CUTOFF_HOUR = 11    # no new entries at or after 11:00 AM ET
+TARGET_RATIO      = 0.5   # target = range high + 0.5 x range (~66% win rate in backtest)
+ENTRY_CUTOFF_HOUR = 12    # no new entries at or after 12:00 PM ET (range now ends 10:30)
 
 # Stop logic
-STOP_MODE     = "atr"   # "atr" => max(orb_low, entry - ATR_STOP_MULT*ATR); "midpoint" => (orb_high+orb_low)/2
+STOP_MODE     = "midpoint"   # midpoint halves the dollar risk per contract vs the range low, with a higher avg R.  Options: "atr" => max(orb_low, entry - ATR_STOP_MULT*ATR); "midpoint" => (orb_high+orb_low)/2
 ATR_PERIOD    = 14      # ATR lookback (daily bars)
 ATR_STOP_MULT = 0.4     # research: stop = entry - 0.4*ATR, floored at orb_low
-BREAKEVEN_TRIGGER_RATIO = 0.75  # move stop to entry once price is 0.75x of the way to target. No trailing (QuantCrawler: trailing hurt PnL).
+BREAKEVEN_TRIGGER_RATIO = 0     # 0 = off. With a 0.5x target the breakeven move only cut winners short in the backtest.
 
 # Position sizing modifiers
 SEPTEMBER_SIZE_MULT = 0.5   # September is a weak month: halve size (size reducer, NOT a skip)
