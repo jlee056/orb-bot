@@ -8,7 +8,10 @@ name: Forward log (after the close)
 # to exact commits and packages to exact versions.
 on:
   schedule:
-    - cron: "30 21 * * 1-5"   # 5:30 PM ET in summer, 4:30 PM ET in winter
+    # Several start times on purpose: GitHub can start scheduled jobs late or skip one.
+    # Starting twice is harmless (one order, one push and one log row per day).
+    - cron: "30 21 * * 1-5"   # 5:30 PM ET in summer, 4:30 PM in winter
+    - cron: "30 23 * * 1-5"   # backup
   workflow_dispatch:
 
 permissions: {}
@@ -26,6 +29,7 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262   # v4.4.0
         with:
+          ref: main
           persist-credentials: false
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065   # v5.6.0
         with:
@@ -53,6 +57,8 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262   # v4.4.0
+        with:
+          ref: main
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093   # v4.3.0
         with:
           name: forward-record

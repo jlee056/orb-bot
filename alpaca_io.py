@@ -140,6 +140,15 @@ class AlpacaBroker:
         except APIError:
             return 0.0
 
+    def has_order(self, client_order_id):
+        """True if an order with this client id was ever submitted (filled, open or cancelled)."""
+        from alpaca.common.exceptions import APIError
+        try:
+            self.client.get_order_by_client_id(client_order_id)
+            return True
+        except APIError:
+            return False
+
     def open_orders(self, symbol=SYMBOL):
         from alpaca.trading.enums import QueryOrderStatus
         from alpaca.trading.requests import GetOrdersRequest
@@ -202,6 +211,9 @@ class FakeBroker:
 
     def position_qty(self, symbol=SYMBOL):
         return self.qty
+
+    def has_order(self, client_order_id):
+        return any(o.client_order_id == client_order_id for o in self.orders)
 
     def open_orders(self, symbol=SYMBOL):
         return [o for o in self.orders if o.status in ("new", "held")]

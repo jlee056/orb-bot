@@ -14,6 +14,7 @@ message is printed and nothing is sent.
 """
 import argparse
 import dataclasses
+import json
 import os
 import sys
 import time
@@ -29,12 +30,30 @@ from forward_run import TZ, fetch, fetch_vix, strategy_params
 DATA_LAG_MIN = 15   # keep polling this long past the cutoff so delayed bars can arrive
 
 
-def push(title, body, tags="chart_with_upwards_trend", dry=False):
+def already_sent(title):
+    """True if a push with this exact title is already in the topic's recent history (ntfy keeps
+    about 12 hours). Titles carry the date, so this makes each day's message send-once even when
+    a job is started more than once."""
+    topic = os.getenv("NTFY_TOPIC", "").strip()
+    if not topic:
+        return False
+    try:
+        raw = urllib.request.urlopen(f"https://ntfy.sh/{topic}/json?poll=1&since=12h", timeout=20).read()
+        return any(json.loads(line).get("title") == title for line in raw.decode("utf-8").splitlines() if line)
+    except Exception as e:   # if the history cannot be read, send rather than stay silent
+        print(f"could not read push history ({e}); sending anyway")
+        return False
+
+
+def push(title, body, tags="chart_with_upwards_trend", dry=False, once=True):
     topic = os.getenv("NTFY_TOPIC", "").strip()
     print(f"[{pd.Timestamp.now(tz=TZ):%H:%M}] {title} | {body}")
     if dry or not topic:
         if not topic and not dry:
             print("NTFY_TOPIC not set: nothing sent.")
+        return
+    if once and already_sent(title):
+        print("Already sent today; not sending again.")
         return
     req = urllib.request.Request(f"https://ntfy.sh/{topic}", data=body.encode("utf-8"),
                                  headers={"Title": title, "Tags": tags})
@@ -121,7 +140,8 @@ def main():
     p = strategy_params()
 
     if a.test:
-        push("ORB bot: test alert", "If you can read this on your phone, alerts are working.", "white_check_mark")
+        push("ORB bot: test alert", "If you can read this on your phone, alerts are working.", "white_check_mark",
+             once=False)
         return 0
     if a.replay:
         return replay(date.fromisoformat(a.replay), p)

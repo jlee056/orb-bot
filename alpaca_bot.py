@@ -219,6 +219,9 @@ def mode_entry():
         push(f"ORB QQQ {today:%b} {today.day}: no trade", "Half day: the bot does not trade shortened sessions.",
              "no_entry_sign")
         return 0
+    if broker.has_order(order_id(today)):
+        print("Today's order was already sent; nothing to do.")
+        return 0
     if broker.position_qty() != 0 or broker.open_orders():
         print("A QQQ position or order already exists; not placing another.")
         return 0

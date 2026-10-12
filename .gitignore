@@ -12,3 +12,4 @@ trade_log_legacy*.csv
 backtest_results.csv
 .claude/
 graphify-out/
+watchdog.log
