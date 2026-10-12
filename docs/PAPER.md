@@ -6,7 +6,16 @@ Each trade is sized to risk about $75. The "$5,000 account" column shows what th
 
 Paper fills are optimistic: Alpaca's simulator does not model slippage or market impact.
 
-No sessions logged yet.
+**Days logged:** 1 (2026-10-12 to 2026-10-12)  
+**Trades closed:** 0  
+
+20 more trades needed before this record means much. With fewer than 20 trades, any result is mostly luck.
+
+## Last 20 sessions
+
+| Date | Outcome | Shares | Entry | Stop | Target | Exit | Result (R) | Practice profit | $5,000 account |
+|---|---|---|---|---|---|---|---|---|---|
+| 2026-10-12 | No breakout |  |  |  |  |  |  |  |  |
 
 ## Other orders in this account
 
