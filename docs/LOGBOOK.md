@@ -371,11 +371,42 @@ Replaying the morning afterwards: QQQ had no breakout, so no trade was missed, o
 
 The live bot reads Alpaca's free IEX feed, which is one exchange. The backtest used consolidated data. The opening range can differ by a few cents between the two, so a live day can trigger or size slightly differently from the backtest. Each logged row stores what the engine expected on the same data the bot saw.
 
+## 2026-10-12 — News-day calendar filled in and tested
+
+`events.py` had only eight Fed dates in it. It now holds 532 scheduled-news days from 2020 to 2027.
+
+| What | Source |
+|---|---|
+| CPI, PPI, jobs report, GDP, PCE release days, 2020 to 2026 | ALFRED (St. Louis Fed) release-date archive; the 2026 CPI, PPI and jobs dates match the BLS schedule exactly |
+| Upcoming releases to the end of 2026 | BLS and BEA schedule pages |
+| Fed decision days, 2021 to 2027 | Federal Reserve calendar |
+| Mag-7 earnings reports | yfinance. Reports come after the close, so the morning tagged is the next trading day. Future dates are estimates. |
+
+**Do news days matter for this strategy?** Average result per trade, frozen settings:
+
+| Day type | QQQ 2020 to 2026 | NQ 2023 to 2026 |
+|---|---|---|
+| No scheduled news | +0.08 R (312 trades) | +0.16 R (153) |
+| Any scheduled news | +0.09 R (120) | +0.06 R (63) |
+| CPI | +0.03 R (25) | +0.10 R (15) |
+| PPI | -0.03 R (22) | -0.03 R (13) |
+| Jobs report | +0.24 R (20) | +0.34 R (7) |
+| PCE | +0.38 R (17) | +0.14 R (11) |
+| GDP | +0.01 R (22) | -0.20 R (10) |
+| Mag-7 earnings morning | +0.28 R (25) | +0.24 R (12) |
+| **Fed decision day** | **-0.60 R (8)** | **-0.76 R (6)** |
+
+- **Morning reports and earnings: no reason to skip.** On QQQ, news days did as well as quiet days. The individual categories have 7 to 25 trades each, so their differences are noise.
+- **Fed decision days stand out.** Two wins in eight QQQ trades, one in six on NQ. Every one of those trades was already over before 1:30 PM, so the old "close early on Fed days" rule would have changed nothing.
+- **How much to trust the Fed result:** it is eight trades, the NQ trades are mostly the same days as the QQQ ones, and it is one of seven categories looked at. There is a plausible reason for it (markets often stall or reverse on the morning of a Fed announcement), but this is a small sample.
+
+**What changed:** the bot no longer skips news days by default (`FILTER_EVENT_DAYS = False`; they are still logged). A separate skip for Fed decision days is under review. It would be a change to the frozen settings, so it has not been made.
+
 ## Next
 
 1. Confirm the first full scheduled day (alert, entry, close, log) runs without help.
 2. Let the forward record and the paper record run. Compare each with the backtest after 20 or more trades.
-3. Fill in the 2026 event calendar and test whether event days matter.
+3. Decide whether to skip Fed decision days (next one: 2026-10-28).
 4. Revisit funding only if the records hold up.
 
 ## Data and sources
