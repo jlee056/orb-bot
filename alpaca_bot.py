@@ -155,6 +155,9 @@ def build_row(broker, data, day_date, p, vix):
     tp = next((o for o in legs if o.limit_price is not None), None)
     sl = next((o for o in legs if o.stop_price is not None and o.limit_price is None), None)
     sells = [o for o in orders if o.side.endswith("sell") and o.filled_qty and o.filled_avg_price is not None]
+    # Only sells that filled after the bot's own entry count (ignores unrelated orders earlier in the day).
+    if parent.filled_at is not None:
+        sells = [o for o in sells if o.filled_at is None or o.filled_at >= parent.filled_at]
     sold = sum(o.filled_qty for o in sells)
     entry, qty = parent.filled_avg_price, parent.filled_qty
     row.update(shares=f(qty, 0), entry=f(entry), stop=f(sl.stop_price if sl else None),

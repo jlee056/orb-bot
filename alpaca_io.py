@@ -175,6 +175,7 @@ class AlpacaBroker:
                 id=str(o.id), parent=parent, client_order_id=o.client_order_id,
                 side=str(getattr(o.side, "value", o.side)), type=str(getattr(o.type, "value", o.type)),
                 status=str(getattr(o.status, "value", o.status)), filled_qty=_f(o.filled_qty) or 0.0,
+                filled_at=getattr(o, "filled_at", None),
                 filled_avg_price=_f(o.filled_avg_price), limit_price=_f(o.limit_price), stop_price=_f(o.stop_price)))
             for leg in (o.legs or []):
                 add(leg, str(o.id))
@@ -207,7 +208,7 @@ class FakeBroker:
 
     def _order(self, **k):
         o = SimpleNamespace(id=str(len(self.orders) + 1), parent=None, client_order_id=None, side="buy",
-                            type="market", status="new", filled_qty=0.0, filled_avg_price=None,
+                            type="market", status="new", filled_qty=0.0, filled_avg_price=None, filled_at=None,
                             limit_price=None, stop_price=None, placed_at=None)
         o.__dict__.update(k)
         self.orders.append(o)
