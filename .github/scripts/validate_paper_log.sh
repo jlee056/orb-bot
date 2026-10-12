@@ -21,6 +21,12 @@ fail() { echo "::error::paper log rejected: $1"; exit 1; }
 [ ! -L "$NEW" ] && [ -f "$NEW" ] || fail "missing or not a regular file"
 [ "$(stat -c %s "$NEW")" -le 2000000 ] || fail "larger than 2 MB"
 
+# Byte-level check on the raw file, before any line-based tool sees it: only printable
+# ASCII, LF and CR are allowed. This rejects NUL and other control bytes outright, so the
+# tools below cannot disagree about where a line or a field ends.
+stray="$(LC_ALL=C tr -d '\n\r -~' < "$NEW" | wc -c)"
+[ "$stray" -eq 0 ] || fail "contains $stray byte(s) outside printable ASCII"
+
 # Normalise to LF with every line terminated, so line counts cannot be off by one.
 normalise() { tr -d '\r' < "$1" | awk '{ print }'; }
 new_clean="$(mktemp)"; old_clean="$(mktemp)"
