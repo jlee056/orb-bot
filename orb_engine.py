@@ -88,8 +88,9 @@ class Day:
     atr: float           # ATR(14) of full sessions, known before today's open
 
 
-def prepare(df, vix=None, atr_period=14):
-    """Turn an intraday frame into a list of Day objects with no-lookahead daily features."""
+def prepare(df, vix=None, atr_period=14, partial_last=False):
+    """Turn an intraday frame into a list of Day objects with no-lookahead daily features.
+    partial_last=True also keeps the final day while its session is still in progress."""
     bar = int(pd.Series(df.index[1:200] - df.index[:199]).mode()[0].total_seconds() // 60)
     mod_all = df.index.hour * 60 + df.index.minute
 
@@ -109,9 +110,12 @@ def prepare(df, vix=None, atr_period=14):
 
     rth = df[(mod_all >= RTH_OPEN) & (mod_all < RTH_CLOSE)]
     days, prev_close = [], np.nan
+    last_day = rth.index[-1].normalize() if len(rth) else None
     for d, b in rth.groupby(rth.index.normalize()):
         mod = (b.index.hour * 60 + b.index.minute).to_numpy()
         full = len(b) >= 0.95 * (RTH_CLOSE - RTH_OPEN) / bar and mod[0] == RTH_OPEN
+        if partial_last and d == last_day and mod[0] == RTH_OPEN:
+            full = True
         f = feat.loc[d] if d in feat.index else None
         if full and f is not None and not np.isnan(f["atr"]):
             v = np.nan

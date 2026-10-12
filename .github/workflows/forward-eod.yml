@@ -1,0 +1,42 @@
+name: Forward log (after the close)
+
+# Replays each finished session on delayed Yahoo data and commits the result.
+# No broker, no orders.
+on:
+  schedule:
+    - cron: "30 21 * * 1-5"   # 5:30 PM ET in summer, 4:30 PM ET in winter
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: forward-eod
+  cancel-in-progress: false
+
+jobs:
+  eod:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Replay finished sessions
+        run: python forward_run.py
+      - name: Rebuild the forward page
+        run: python forward_report.py
+      - name: Commit the record
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add forward docs/FORWARD.md docs/charts
+          if git diff --cached --quiet; then
+            echo "Nothing new to commit."
+          else
+            git commit -m "Forward log: $(TZ=America/New_York date +%F)"
+            git push
+          fi

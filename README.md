@@ -6,7 +6,7 @@
 ![Python](https://img.shields.io/badge/python-3.9%2B-blue)
 ![Broker](https://img.shields.io/badge/broker-Interactive%20Brokers-red)
 
-**[Read the logbook](docs/LOGBOOK.md)** for the full build history, the 800-day backtest, and every chart.
+**[Read the logbook](docs/LOGBOOK.md)** for the full build history, the 800-day backtest, and every chart. **[Forward record](docs/FORWARD.md)**: what the bot would have done each day since the settings were frozen, updated automatically after every close.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/charts/equity-dark.png">
@@ -175,13 +175,13 @@ The `vix` column lets you analyze which VIX environments produce the best result
 
 ## Current Status
 
-**Backtested, waiting on a forward record.** See the [logbook](docs/LOGBOOK.md) for detail.
+**Backtested; a forward record is now running.** See the [logbook](docs/LOGBOOK.md) for detail.
 
 - [x] Bot built; connects, locks the range, detects breakouts, sends bracket orders
 - [x] Paper-log-only mode, event calendar, loss caps
 - [x] First live breakout detected (order rejected: account has no futures permission)
 - [x] 800-day backtest with costs; settings retuned from it
-- [ ] Daily forward run on delayed data, no broker
+- [x] Daily forward run on delayed data, no broker ([forward record](docs/FORWARD.md))
 - [ ] 20+ forward signals compared with the backtest
 - [ ] First paper fill through IBKR (needs a funded account)
 
@@ -196,6 +196,10 @@ The `vix` column lets you analyze which VIX environments produce the best result
 - `backtest.py` — backtests the bot exactly as `config.py` has it
 - `make_charts.py` — rebuilds every chart and table in the logbook
 - `get_data.py` — downloads the free price data into `data/` (git-ignored)
+- `forward_run.py` — after each close, replays the day on delayed Yahoo data and appends to `forward/forward_log.csv`
+- `forward_report.py` — rebuilds `docs/FORWARD.md` and its chart from that log
+- `forward_alert.py` — morning phone alert (ntfy) when a breakout fires
+- `.github/workflows/` — runs the two forward jobs on GitHub's servers every weekday
 - `docs/LOGBOOK.md` — the project logbook; `docs/charts/`, `docs/data/` — its charts and tables
 - `setup_guide.md` — IBKR and TWS setup walkthrough
 - `trade_log.csv` — auto-generated trade journal (git-ignored)

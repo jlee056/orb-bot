@@ -1,0 +1,32 @@
+name: Morning breakout alert
+
+# Watches delayed Yahoo data from 10:30 to 12:00 ET and sends one phone push.
+# No broker, no orders. The script waits on the Eastern clock, so one UTC start
+# time covers both summer and winter.
+on:
+  schedule:
+    - cron: "45 13 * * 1-5"   # 9:45 AM ET in summer, 8:45 AM ET in winter
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: forward-alert
+  cancel-in-progress: false
+
+jobs:
+  alert:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Watch for the breakout
+        env:
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+        run: python -u forward_alert.py

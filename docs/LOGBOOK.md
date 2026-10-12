@@ -8,7 +8,7 @@ A running record of how this bot was built, tested and changed, including the pa
 - **The strategy was retuned from a backtest of about 800 trading days.** The new settings are a 60-minute opening range, a stop at the range midpoint, a target of half the range, and one filter (price above its 20-day average).
 - **The edge is real but small.** After costs the new settings average +0.13 R per trade (R is the amount risked), a 65% win rate and a profit factor of 1.48, and they were profitable in every period tested, including the two years held back from tuning.
 - **Account size is the limiting factor.** One MNQ contract risks about $130 to $310 per trade. A 1.5% risk rule needs an account of roughly $15,000.
-- **Next:** run the bot every weekday on free delayed data, with no broker, to build a forward track record.
+- **A forward record is running.** Every weekday the bot's decisions are logged automatically from delayed data, with no broker: see the [forward record](FORWARD.md).
 
 | | Trades | Win rate | Avg R | Profit factor | Profit, 1 contract | Max drawdown |
 |---|---|---|---|---|---|---|
@@ -247,12 +247,42 @@ At $5,000 the choices are to accept about 4% risk per trade, or not to trade MNQ
 - **Broker path untested.** The changes to the IBKR code could not be run against Trader Workstation without a funded account. The pieces that do not need a connection were checked.
 - **Data quality:** the Kaggle and GitHub files are community datasets. The Kaggle file's contract-roll adjustment is undocumented. Intraday ranges are unaffected by that; the overnight gap and daily ATR could be slightly off on roll days.
 
+## 2026-10-12 — Forward run on delayed data
+
+The backtest says what would have happened. The forward run records what does happen, starting from the day the settings were frozen, with no chance to adjust anything afterwards.
+
+**How it works**
+
+- Two jobs run on GitHub's servers every weekday (GitHub Actions), so no computer needs to be on.
+- **After the close:** `forward_run.py` downloads the day's NQ futures bars from Yahoo, replays the session with the same engine as the backtest, and appends one row to [`forward/forward_log.csv`](../forward/forward_log.csv). `forward_report.py` then rebuilds the [forward record](FORWARD.md) page and the job commits both.
+- **In the morning:** `forward_alert.py` watches the same data from 10:30 to 12:00 ET and sends one phone notification: a breakout with entry, stop and target, or "no trade today" with the reason.
+- No orders are placed and no broker is involved.
+
+**About the data delay**
+
+- Yahoo's NQ futures prices run about 10 minutes late (measured: 10.6 minutes).
+- The after-close log replays a finished session, so the delay does not affect it.
+- The morning alert arrives about 10 minutes after the real breakout. It is a heads-up, not a signal to trade on.
+- Yahoo keeps 7 days of 1-minute bars and 60 days of 5-minute bars. A missed run is filled in by the next one, at 1-minute detail if it is within 7 days.
+
+**Rules that keep the record honest**
+
+- The log starts on 2026-10-12 and is append-only. A logged day is never recalculated.
+- Every row stores a hash of the strategy settings. If the settings change, the hash changes, and the old rows stay as they were.
+- Every trading day gets a row, including days with no trade.
+- Nothing will be tuned from this record until it has at least 20 signals.
+
+**Checks before switching it on**
+
+- Replaying 2026-09-28 to 2026-10-09 gave the same four trades, entries and exits as the backtest for those dates.
+- Running the log twice adds no rows the second time.
+- The alert, stepped minute by minute through last week, decided the same way as the log on all five days.
+
 ## Next
 
-1. Run the bot each weekday on free delayed data (yfinance, about 15 minutes late) with no broker, logging what it would have done.
-2. Compare that forward record with the backtest after 20 or more signals.
-3. Fill in the 2026 event calendar and test whether event days matter.
-4. Revisit funding only if the forward record holds up.
+1. Let the forward record run. Compare it with the backtest after 20 or more signals.
+2. Fill in the 2026 event calendar and test whether event days matter.
+3. Revisit funding only if the forward record holds up.
 
 ## Data and sources
 
