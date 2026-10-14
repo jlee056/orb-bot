@@ -1,3 +1,4 @@
 date,config_id,bar_min,range_high,range_low,range_pct,flags,outcome,entry,stop,target,exit,pts,risk_pts,R,usd_1c,over_risk,logged_at
 2026-10-12,00c5314f,1,31048.75,30857.25,0.00619,,no_breakout,,,,,,,,,,2026-10-12T21:45Z
 2026-10-13,00c5314f,1,30814.75,30591.25,0.00728,,no_breakout,,,,,,,,,,2026-10-13T21:45Z
+2026-10-14,00c5314f,1,30660.75,30454.50,0.00675,,downside_break,,,,,,,,,,2026-10-14T21:45Z
