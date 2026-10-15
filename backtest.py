@@ -37,14 +37,18 @@ def params_from_config(paper=False):
     )
 
 
-def qqq():
-    """The frozen settings on QQQ shares (what the Alpaca paper bot trades). No retuning."""
+def qqq(variant="base", slip=None):
+    """The frozen settings on QQQ shares (what the Alpaca paper bot trades). No retuning.
+    variant: a name from variants.py. slip: override the 2-cent slippage (stress test)."""
     import glob
     import os
 
     import alpaca_io as A
+    import variants
     from alpaca_bot import RISK_USD, qqq_params
-    p = E.replace(qqq_params(), account=RISK_USD / 0.015, risk_pct=0.015, max_contracts=10 ** 6)
+    p = E.replace(qqq_params(variants.get(variant)), account=RISK_USD / 0.015, risk_pct=0.015, max_contracts=10 ** 6)
+    if slip is not None:
+        p = E.replace(p, slip=slip)
     files = sorted(glob.glob(os.path.join(E.DATA, "alpaca", "QQQ_1min_*.csv")))
     vix = E.load_vix()
     if files:
@@ -58,19 +62,32 @@ def qqq():
         src = "yfinance 5-minute bars, last 60 days only (run get_data.py --qqq for the full history)"
     cols = ["days", "n", "win%", "avgR", "t", "PF", "usd", "maxDD$", "worst$", "avgRisk$"]
     pd.set_option("display.width", 200)
-    print(f"QQQ, frozen settings: range {p.or_min} min, stop {p.stop_mode}, target {p.target_k} x range")
+    print(f"QQQ, variant {variant}: range {p.or_min} min, entry {p.entry_mode}, shorts {p.shorts}, "
+          f"stop {p.stop_mode}, target {p.target_mode} {p.target_k}")
     print(f"Data: {src}")
-    print(f"Sized to risk ${RISK_USD:.0f} per trade. Costs: 2 cents slippage per market fill, no commission.\n")
+    print(f"Sized to risk ${RISK_USD:.0f} per trade. Costs: {p.slip * 100:.0f} cents slippage per market fill, "
+          f"no commission.\n")
     table = {k: E.stats(E.run(v, p)) for k, v in groups.items() if v}
     if len(groups) > 1:
-        table["ALL"] = E.stats(E.run(days, p))
+        res = E.run(days, p)
+        table["ALL"] = E.stats(res)
+        t = res[res["dir"] != 0]
+        for name, part in (("longs", t[t["dir"] == 1]), ("shorts", t[t["dir"] == -1])):
+            if len(part):
+                R = part["pts"] / part["risk"]
+                print(f"{name}: {len(part)} trades, {100 * (part['usd'] > 0).mean():.0f}% wins, avg R {R.mean():+.3f}")
+        print("Outcomes:", res["why"].value_counts().to_dict(), "\n")
     print(pd.DataFrame(table).T.reindex(columns=cols).to_string())
-    print("\nFor comparison, NQ futures on the same settings: 216 trades, 65% wins, +0.13 avg R, PF 1.48.")
+    if variant == "base":
+        print("\nFor comparison, NQ futures on the same settings: 216 trades, 65% wins, +0.13 avg R, PF 1.48.")
 
 
 def main():
     if "--qqq" in sys.argv:
-        return qqq()
+        args = sys.argv[1:]
+        variant = args[args.index("--variant") + 1] if "--variant" in args else "base"
+        slip = float(args[args.index("--slip") + 1]) if "--slip" in args else None
+        return qqq(variant, slip)
     paper = "--paper" in sys.argv
     if "--refresh" in sys.argv:
         E.load_yf(refresh=True)

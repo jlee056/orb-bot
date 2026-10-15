@@ -140,6 +140,7 @@ class P:
     eod: int = 15 * 60 + 50        # force close
     shorts: bool = False
     entry_mode: str = "breakout"  # "always" = buy the first 5-min close after the range (benchmark only)
+    #                               "candle" = trade the range candle's direction at the next bar's open
     # stop: "atr" max(orb_low, entry - k*ATR) | "orb_low" | "midpoint" | "cap" max(orb_low, entry - k pts)
     #       | "pct" entry*(1-k) floored at orb_low
     stop_mode: str = "atr"
@@ -152,6 +153,7 @@ class P:
     f_friday: bool = False
     f_vix: bool = False
     f_ema: bool = False
+    f_ema_dir: bool = False        # with f_ema: longs need above EMA, shorts need below (instead of blocking the day)
     f_gap: bool = False
     f_range: bool = False
     skip_days: tuple = ()          # weekdays to skip (Mon=0)
@@ -205,7 +207,7 @@ def blocked(fl, day, p):
         return True
     if p.f_vix and ("vix_low" in fl or "vix_high" in fl):
         return True
-    if p.f_ema and ("below_ema" in fl or "ema_whipsaw" in fl):
+    if p.f_ema and not p.f_ema_dir and ("below_ema" in fl or "ema_whipsaw" in fl):
         return True
     if p.f_gap and "gap" in fl:
         return True
@@ -234,25 +236,45 @@ def simulate(day, p):
         rec["why"] = "filtered"
         return rec
 
-    # 5-minute closes strictly after the range and up to the cutoff.
-    end = mod + bar
-    sig = np.flatnonzero((end % 5 == 0) & (end > or_end) & (end <= p.cutoff))
     i, direction = None, 0
-    for k in sig:
-        if p.entry_mode == "always":
-            i, direction = k, 1
-            break
-        if day.c[k] > orb_high:
-            i, direction = k, 1
-            break
-        if day.c[k] < orb_low:
-            if p.shorts:
-                i, direction = k, -1
-            else:
-                rec["why"] = "downside_break"
-            break
+    if p.entry_mode == "candle":
+        # The range is one candle: trade its direction at the open of the first bar after it.
+        c_open, c_close = day.o[in_or][0], day.c[in_or][-1]
+        after = np.flatnonzero(mod >= or_end)
+        if c_close == c_open:
+            rec["why"] = "doji"
+            return rec
+        if not len(after):
+            return rec
+        i, direction = after[0], (1 if c_close > c_open else -1)
+    else:
+        # 5-minute closes strictly after the range and up to the cutoff.
+        end = mod + bar
+        sig = np.flatnonzero((end % 5 == 0) & (end > or_end) & (end <= p.cutoff))
+        for k in sig:
+            if p.entry_mode == "always":
+                i, direction = k, 1
+                break
+            if day.c[k] > orb_high:
+                i, direction = k, 1
+                break
+            if day.c[k] < orb_low:
+                if p.shorts:
+                    i, direction = k, -1
+                else:
+                    rec["why"] = "downside_break"
+                break
     if i is None:
         return rec
+
+    # Trend filter per direction: only the first break counts, there is no second look.
+    if p.f_ema and p.f_ema_dir:
+        if direction == 1 and ("below_ema" in fl or "ema_whipsaw" in fl):
+            rec["why"] = "filtered_dir"
+            return rec
+        if direction == -1 and "below_ema" not in fl:
+            rec["why"] = "filtered_dir"
+            return rec
 
     # Mirror prices for shorts so the rest is written long-only.
     if direction == 1:
@@ -260,31 +282,34 @@ def simulate(day, p):
     else:
         o, h, l, c, hi, lo = -day.o, -day.l, -day.h, -day.c, -orb_low, -orb_high
 
-    entry = c[i] + p.slip
+    # Breakout fills at the signal bar's close; candle mode fills at the entry bar's open.
+    candle = p.entry_mode == "candle"
+    ref = o[i] if candle else c[i]
+    entry = ref + p.slip
     if p.stop_mode == "atr":
-        stop = max(lo, c[i] - p.stop_k * day.atr)
+        stop = max(lo, ref - p.stop_k * day.atr)
     elif p.stop_mode == "orb_low":
         stop = lo
     elif p.stop_mode == "midpoint":
         stop = (hi + lo) / 2
     elif p.stop_mode == "cap":
-        stop = max(lo, c[i] - p.stop_k)
+        stop = max(lo, ref - p.stop_k)
     elif p.stop_mode == "pct":
-        stop = max(lo, c[i] - p.stop_k * abs(c[i]))
+        stop = max(lo, ref - p.stop_k * abs(ref))
     else:
         raise ValueError(p.stop_mode)
     risk = entry - stop
     if p.target_mode == "range":
         target = hi + p.target_k * (hi - lo)
     elif p.target_mode == "r":
-        target = c[i] + p.target_k * (c[i] - stop)
+        target = ref + p.target_k * (ref - stop)
     else:
         target = np.inf
     if target <= entry or risk <= 0:
         rec["why"] = "no_room"
         return rec
 
-    j0 = i + 1
+    j0 = i if candle else i + 1
     eod_i = _first(mod >= p.eod, j0)
     last = eod_i if eod_i is not None else len(c)
     hs, ls, cs = h[:last], l[:last], c[:last]
@@ -292,17 +317,17 @@ def simulate(day, p):
     t_stop = _first(ls <= stop, j0)
     t_be = None
     if p.breakeven > 0 and np.isfinite(target):
-        t_be = _first(cs >= c[i] + p.breakeven * (target - c[i]), j0)
+        t_be = _first(cs >= ref + p.breakeven * (target - ref), j0)
 
     INF = 10 ** 9
     a_tgt = t_tgt if t_tgt is not None else INF
     a_stop = t_stop if t_stop is not None else INF
     why, exit_px = "eod", None
     if t_be is not None and t_be < a_stop and t_be < a_tgt:
-        t_bes = _first(ls <= c[i], t_be + 1)
+        t_bes = _first(ls <= ref, t_be + 1)
         a_bes = t_bes if t_bes is not None else INF
         if a_bes <= a_tgt and a_bes < INF:
-            why, exit_px = "breakeven", min(c[i], o[a_bes]) - p.slip
+            why, exit_px = "breakeven", min(ref, o[a_bes]) - p.slip
         elif a_tgt < INF:
             why, exit_px = "target", target
     elif a_stop <= a_tgt and a_stop < INF:      # same-bar tie goes to the stop (conservative)
@@ -315,6 +340,13 @@ def simulate(day, p):
     rec.update(why=why, dir=direction, entry=entry, stop=stop, target=target, exit=exit_px,
                pts=exit_px - entry, risk=risk)
     return rec
+
+
+def prices(rec):
+    """Real (positive) entry/stop/target/exit of a traded record. simulate() keeps short prices
+    mirrored (negative); pts and risk are already signed correctly."""
+    s = rec["dir"]
+    return {k: s * rec[k] for k in ("entry", "stop", "target", "exit")}
 
 
 # ---------------------------------------------------------------------------

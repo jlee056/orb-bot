@@ -1,6 +1,7 @@
 name: Forward log (after the close)
 
-# Replays each finished session on delayed Yahoo data and commits the result.
+# Replays each finished session on delayed Yahoo data, for the base rules and each
+# variant in variants.py, and commits the result.
 # No broker, no orders.
 #
 # Two jobs on purpose: "build" installs and runs Python with a read-only token,
@@ -37,15 +38,22 @@ jobs:
       - run: pip install --require-hashes -r requirements-forward.lock
       - name: Replay finished sessions
         run: python forward_run.py
-      - name: Rebuild the forward page
-        run: python forward_report.py
+      - name: Rebuild the forward page and the variants page
+        run: |
+          python forward_report.py
+          python variants_report.py
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02   # v4.6.2
         with:
           name: forward-record
           retention-days: 3
           path: |
             forward/forward_log.csv
+            forward/forward_log_orb5.csv
+            forward/forward_log_both60.csv
             docs/FORWARD.md
+            docs/VARIANTS.md
+            docs/charts/variants.png
+            docs/charts/variants-dark.png
             docs/charts/forward.png
             docs/charts/forward-dark.png
 
@@ -63,7 +71,7 @@ jobs:
         with:
           name: forward-record
           path: ${{ runner.temp }}/record
-      # The build job is the less trusted side. Take only the four expected files
+      # The build job is the less trusted side. Take only the expected files
       # from its output, by exact name, and check each one before it enters the repo.
       - name: Copy the expected files only
         env:
@@ -71,7 +79,10 @@ jobs:
         run: |
           set -euo pipefail
           HEADER="date,config_id,bar_min,range_high,range_low,range_pct,flags,outcome,entry,stop,target,exit,pts,risk_pts,R,usd_1c,over_risk,logged_at"
-          for f in forward/forward_log.csv docs/FORWARD.md docs/charts/forward.png docs/charts/forward-dark.png; do
+          files="forward/forward_log.csv forward/forward_log_orb5.csv forward/forward_log_both60.csv
+                 docs/FORWARD.md docs/VARIANTS.md docs/charts/forward.png docs/charts/forward-dark.png
+                 docs/charts/variants.png docs/charts/variants-dark.png"
+          for f in $files; do
             src="$RECORD/$f"
             if [ ! -e "$src" ] && [ ! -L "$src" ]; then
               continue                      # charts do not exist until the first signal
@@ -82,9 +93,12 @@ jobs:
             if [ "$(stat -c %s "$src")" -gt 5000000 ]; then
               echo "::error::$f is larger than 5 MB"; exit 1
             fi
-            if [ "$f" = "forward/forward_log.csv" ] && [ "$(head -n 1 "$src" | tr -d '\r')" != "$HEADER" ]; then
-              echo "::error::forward_log.csv has an unexpected header"; exit 1
-            fi
+            case "$f" in
+              forward/*.csv)
+                if [ "$(head -n 1 "$src" | tr -d '\r')" != "$HEADER" ]; then
+                  echo "::error::$f has an unexpected header"; exit 1
+                fi ;;
+            esac
             mkdir -p "$(dirname "$f")"
             cp --no-dereference "$src" "$f"
           done
@@ -92,8 +106,9 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add forward/forward_log.csv docs/FORWARD.md
-          git add docs/charts/forward.png docs/charts/forward-dark.png 2>/dev/null || true
+          git add forward/forward_log.csv forward/forward_log_orb5.csv forward/forward_log_both60.csv
+          git add docs/FORWARD.md docs/VARIANTS.md
+          git add docs/charts/forward.png docs/charts/forward-dark.png docs/charts/variants.png docs/charts/variants-dark.png 2>/dev/null || true
           if git diff --cached --quiet; then
             echo "Nothing new to commit."
           else

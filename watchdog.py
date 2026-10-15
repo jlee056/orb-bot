@@ -4,7 +4,8 @@ GitHub's own scheduler can start jobs late or skip them. This script checks whet
 run of each job has started inside its time window and, if not, starts it with `gh workflow run`.
 The jobs themselves are safe to start more than once (one order and one push per day).
 
-  python watchdog.py morning   paper-entry + forward-alert   (window 06:00 to 11:55 ET)
+  python watchdog.py morning   paper-entry + forward-alert   (window 06:00 to 11:55 ET; the task
+                               starts at 9:05 so the 9:35 orb5 variant is covered)
   python watchdog.py close     paper-close                   (window 11:00 to 15:45 ET)
   python watchdog.py eod       forward-eod                   (window 16:20 to 23:59 ET)
 
@@ -75,13 +76,17 @@ def check(which):
     if titles is None:
         log(f"{which}: could not read the push history")
         return 1
+    import variants
     day = f"{now:%a %b} {now.day}"
+    bots = {v.name: f"ORB QQQ{' ' + v.tag if v.tag else ''} {day}:" for v in variants.ALL.values()}
     if which == "check-morning":
-        expected = {"Yahoo alert (NQ)": f"ORB {day}:", "Alpaca bot (QQQ)": f"ORB QQQ {day}:"}
+        expected = {"Yahoo alert (NQ)": f"ORB {day}:"}
+        expected.update({f"Alpaca bot (QQQ, {name})": prefix for name, prefix in bots.items()})
         missing = [name for name, prefix in expected.items()
                    if not any(t.startswith(prefix) and not t.endswith(": result") for t in titles)]
     else:
-        missing = [] if f"ORB QQQ {day}: result" in titles else ["Alpaca end-of-day result"]
+        missing = [f"Alpaca end-of-day result ({name})" for name, prefix in bots.items()
+                   if f"{prefix} result" not in titles]
     if missing:
         log(f"{which}: MISSING {missing}")
         push(f"ORB PROBLEM {day}: {which.split('-')[1]} message missing",

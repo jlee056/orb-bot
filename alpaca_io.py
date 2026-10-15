@@ -154,10 +154,22 @@ class AlpacaBroker:
         from alpaca.trading.requests import GetOrdersRequest
         return self.client.get_orders(GetOrdersRequest(status=QueryOrderStatus.OPEN, symbols=[symbol]))
 
-    def place_bracket(self, qty, stop, target, client_order_id, symbol=SYMBOL):
+    def can_short(self, symbol=SYMBOL):
+        """(ok, reason): the account may short and the symbol is shortable and easy to borrow."""
+        a = self.client.get_account()
+        if not getattr(a, "shorting_enabled", False):
+            return False, "shorting is not enabled on this account"
+        s = self.client.get_asset(symbol)
+        if not s.shortable or not s.easy_to_borrow:
+            return False, f"{symbol} is not shortable / easy to borrow today"
+        return True, ""
+
+    def place_bracket(self, qty, stop, target, client_order_id, symbol=SYMBOL, side="buy"):
+        """Market entry with a take-profit limit and a stop. side="sell" opens a short (target below, stop above)."""
         from alpaca.trading.enums import OrderClass, OrderSide, TimeInForce
         from alpaca.trading.requests import MarketOrderRequest, StopLossRequest, TakeProfitRequest
-        req = MarketOrderRequest(symbol=symbol, qty=int(qty), side=OrderSide.BUY, time_in_force=TimeInForce.DAY,
+        req = MarketOrderRequest(symbol=symbol, qty=int(qty), side=OrderSide.BUY if side == "buy" else OrderSide.SELL,
+                                 time_in_force=TimeInForce.DAY,
                                  order_class=OrderClass.BRACKET, client_order_id=client_order_id,
                                  take_profit=TakeProfitRequest(limit_price=round(float(target), 2)),
                                  stop_loss=StopLossRequest(stop_price=round(float(stop), 2)))
@@ -226,20 +238,25 @@ class FakeBroker:
         self.orders.append(o)
         return o
 
-    def place_bracket(self, qty, stop, target, client_order_id, symbol=SYMBOL, placed_at=None):
+    def can_short(self, symbol=SYMBOL):
+        return True, ""
+
+    def place_bracket(self, qty, stop, target, client_order_id, symbol=SYMBOL, side="buy", placed_at=None):
         if any(o.client_order_id == client_order_id for o in self.orders):
             raise RuntimeError("client_order_id must be unique")
-        p = self._order(client_order_id=client_order_id, placed_at=placed_at, want=float(qty))
-        self._order(parent=p.id, side="sell", type="limit", status="held", limit_price=round(float(target), 2))
-        self._order(parent=p.id, side="sell", type="stop", status="held", stop_price=round(float(stop), 2))
+        out = "sell" if side == "buy" else "buy"
+        p = self._order(client_order_id=client_order_id, side=side, placed_at=placed_at, want=float(qty))
+        self._order(parent=p.id, side=out, type="limit", status="held", limit_price=round(float(target), 2))
+        self._order(parent=p.id, side=out, type="stop", status="held", stop_price=round(float(stop), 2))
         return p.id
 
     def settle(self, bars, close_at):
         """Fill the open bracket from 1-minute bars: entry at the next bar's open, then the first of
-        stop (checked first), target, or a market close at `close_at`."""
-        for p in [o for o in self.orders if o.parent is None and o.side == "buy" and o.status == "new"]:
+        stop (checked first), target, or a market close at `close_at`. Shorts are mirrored."""
+        for p in [o for o in self.orders if o.parent is None and o.type == "market" and o.status == "new"]:
             tp = next(o for o in self.orders if o.parent == p.id and o.type == "limit")
             sl = next(o for o in self.orders if o.parent == p.id and o.type == "stop")
+            long = p.side == "buy"
             after = bars[bars.index > p.placed_at]
             if not len(after):
                 continue
@@ -248,11 +265,12 @@ class FakeBroker:
             for ts, b in after.iterrows():
                 if ts >= close_at:
                     break
-                if b["low"] <= sl.stop_price:
-                    sl.status, sl.filled_qty, sl.filled_avg_price = "filled", p.want, min(sl.stop_price, b["open"])
+                if (b["low"] <= sl.stop_price) if long else (b["high"] >= sl.stop_price):
+                    px = min(sl.stop_price, b["open"]) if long else max(sl.stop_price, b["open"])
+                    sl.status, sl.filled_qty, sl.filled_avg_price = "filled", p.want, px
                     tp.status, done = "canceled", True
                     break
-                if b["high"] >= tp.limit_price:
+                if (b["high"] >= tp.limit_price) if long else (b["low"] <= tp.limit_price):
                     tp.status, tp.filled_qty, tp.filled_avg_price = "filled", p.want, tp.limit_price
                     sl.status, done = "canceled", True
                     break
@@ -260,7 +278,7 @@ class FakeBroker:
                 tp.status = sl.status = "canceled"
                 late = bars[bars.index >= close_at]
                 px = float(late["open"].iloc[0]) if len(late) else float(bars["close"].iloc[-1])
-                self._order(side="sell", status="filled", filled_qty=p.want, filled_avg_price=px)
+                self._order(side="sell" if long else "buy", status="filled", filled_qty=p.want, filled_avg_price=px)
 
     def flatten(self, symbol=SYMBOL):
         pass
