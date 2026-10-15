@@ -9,6 +9,7 @@ A running record of how this bot was built, tested and changed, including the pa
 - **The edge is real but small.** After costs the new settings average +0.13 R per trade (R is the amount risked), a 65% win rate and a profit factor of 1.48, and they were profitable in every period tested, including the two years held back from tuning.
 - **Account size is the limiting factor.** One MNQ contract risks about $130 to $310 per trade. A 1.5% risk rule needs an account of roughly $15,000.
 - **A forward record is running.** Every weekday the bot's decisions are logged automatically from delayed data, with no broker: see the [forward record](FORWARD.md).
+- **Three variants run side by side from 2026-10-15** (see the 2026-10-14 entry): the base rules, a 5-minute long-and-short rule that trades almost every day, and the base rules plus shorts. Each has its own paper account. Results: [VARIANTS.md](VARIANTS.md).
 
 | | Trades | Win rate | Avg R | Profit factor | Profit, 1 contract | Max drawdown |
 |---|---|---|---|---|---|---|
@@ -402,12 +403,69 @@ The live bot reads Alpaca's free IEX feed, which is one exchange. The backtest u
 
 **What changed:** the bot no longer skips news days by default (`FILTER_EVENT_DAYS = False`; they are still logged). A separate skip for Fed decision days is under review. It would be a change to the frozen settings, so it has not been made.
 
+## 2026-10-14 — Three variants side by side
+
+**Why.** The base rules made no trade on the first three days (Oct 12 no breakout, Oct 13 no breakout, Oct 14 broke down first). On QQQ they trade about 64 times a year. Telling an average of +0.1 R from zero takes about 312 trades (95% confidence with the spread of results the backtest shows: n = (1.96 × 0.9 / 0.1)²), which is about five years at that rate. The money is practice money, so the plan is to collect data faster without touching the frozen rules: two more versions run next to the base, each in its own Alpaca paper account.
+
+**What the research said**
+
+- This logbook's own backtest (2026-10-12): the 5-minute range had the strongest breakout signal of any range tested (+0.17 R against −0.03 R for buying every day), and short trades added nothing on the 60-minute rules.
+- Zarattini & Aziz (2023), "Can Day Trading Really Be Profitable?" (SSRN 4416622): trade QQQ in the direction of the first 5-minute candle, long or short, from the 9:35 open, with the stop at the candle's far side and a 10 R target or the close. About 250 trades a year, no costs beyond commission.
+- Their follow-up (Zarattini, Barbon & Aziz, SSRN 4729284, on "stocks in play"): the edge falls off fast with longer ranges. Sharpe 2.81 at 5 minutes, 1.43 at 15, 0.21 at 30, 0.40 at 60.
+- An independent replication on QQQ (github.com/giovannibrusco/zarattini-2023-orb-qqq) matched the paper, then found the edge breaks even at about 2.2 cents of slippage per share. So the 5-minute rule is worth testing, not worth trusting.
+- Alpaca allows three paper accounts per login, each with its own keys. One account cannot hold a long and a short of the same symbol, so each variant gets its own account.
+
+**The variants** (rules frozen today; first session 2026-10-15)
+
+| Variant | Settings hash (QQQ / NQ) | Rules |
+|---|---|---|
+| `base` | `e0a01dbd` / `00c5314f` | Unchanged: 60-minute range, long only, stop at the midpoint, target half the range, EMA filter |
+| `orb5` | `baa9b9f8` / `961ec940` | First 5-minute candle up: buy; down: sell short; flat: no trade. Market entry at 9:35. Stop at the candle's low (long) or high (short). Target 10 R, otherwise closed at 15:50. No EMA filter |
+| `both60` | `f050443e` / `09fbe296` | Base rules plus a short on a downside break. Longs need QQQ above its 20-day average, shorts need it below. Only the first break counts |
+
+**Backtest on QQQ, 2020-01 to 2026-10-09** (Alpaca 1-minute data, $75 risk per trade, 2 cents slippage, `python backtest.py --qqq --variant NAME`)
+
+| Variant | Trades | Per year | Win rate | Avg R | Longs | Shorts | Profit at $75 risk | Max drawdown |
+|---|---|---|---|---|---|---|---|---|
+| base | 432 | 64 | 63% | +0.084 | +0.084 (432) | none | $2,680 | $684 |
+| orb5 | 1,624 | 242 | 25% | +0.081 | +0.088 (818) | +0.073 (806) | $9,819 | $3,411 |
+| both60 | 633 | 94 | 62% | +0.053 | +0.084 (432) | −0.012 (201) | $2,493 | $556 |
+
+Slippage stress test:
+
+| Variant | 2 cents | 3 cents | 5 cents |
+|---|---|---|---|
+| orb5 | +0.081 R | +0.055 R | +0.007 R |
+| both60 | +0.053 R | +0.044 R | |
+
+- **orb5** is the data engine: almost one trade every day. It wins only a quarter of the time and lives on the few days that run to the close. Its edge is gone at 5 cents of slippage, which matches the outside replication. Its drawdowns are deep (about 45 R in the backtest).
+- **both60** confirms the old finding on a second instrument: the shorts lose slightly (−0.01 R over 201 trades). It runs anyway because it tests that claim live with no extra cost, and every short it takes is a data point on the question.
+- The base result is identical to the 2026-10-12 entry (432 trades, +0.084 R), which checks that none of today's code changes moved it.
+
+**Rules for judging, fixed before the first trade**
+
+- Review each variant at 50, 100 and 312 trades. Nothing is retuned from the live record. A change of rules is a new variant with a new settings hash.
+- Success means an average above zero at 312 trades.
+- A variant stops early if its average is −0.15 R or worse after 100 trades, or if its drawdown passes 1.5 times the largest drawdown in its backtest.
+
+**How it works**
+
+- `variants.py` holds the three variants as small sets of changes to the base settings. `python variants.py --check` fails if the base settings hash moves, and every job runs it first.
+- `orb_engine.py` gained two things: a "candle" entry mode and a per-direction trend filter (`f_ema_dir`). New settings fields are left out of the hash while they hold their default, so the base hash did not change.
+- `alpaca_bot.py --variant NAME` runs any variant: its own order ids (`orb5-2026-10-15`), log file (`paper/alpaca_trades_orb5.csv`) and notification titles (`ORB QQQ [orb5] ...`). It can now sell short, after checking the account allows it and QQQ is easy to borrow.
+- The GitHub jobs run one job per variant, each with only its own account's keys. The after-close job checks each variant's row separately before anything is committed.
+- `forward_run.py` logs all three on the NQ forward record, each to its own file. [VARIANTS.md](VARIANTS.md) shows the three side by side and is rebuilt after every close.
+- The watchdog on the always-on PC now starts at 9:05, so a skipped GitHub start can still be recovered before the 9:35 entry. It also expects a message from each variant.
+
+**A difference to watch: orb5's entry is about a minute late.** The backtest buys at the 9:35 bar's open. The live bot can only see that bar once it has finished, so its order goes out around 9:36:05. It sizes from the latest price and skips the trade if price is already through the stop. Replaying Oct 5 to 9, the fills differed from the engine's by −0.29 R per trade on average, mostly from one day (Oct 9: engine +1.62 R, fill +0.37 R). The "fill gap" column on [VARIANTS.md](VARIANTS.md) tracks this every day.
+
 ## Next
 
-1. Confirm the first full scheduled day (alert, entry, close, log) runs without help.
-2. Let the forward record and the paper record run. Compare each with the backtest after 20 or more trades.
-3. Decide whether to skip Fed decision days (next one: 2026-10-28).
-4. Revisit funding only if the records hold up.
+1. Confirm the first full scheduled day (alert, entry, close, log) runs without help, for all three variants.
+2. Let the records run. Review each variant at 50, 100 and 312 trades against the rules above.
+3. Watch orb5's fill gap. If it stays well below zero, the one-minute delay is eating the edge.
+4. Decide whether to skip Fed decision days (next one: 2026-10-28).
+5. Revisit funding only if the records hold up.
 
 ## Data and sources
 
@@ -416,5 +474,9 @@ The live bot reads Alpaca's free IEX feed, which is one exchange. The backtest u
 - GitHub dataset: https://github.com/axb0306/cme-futures-ohlc
 - Third-party 74.6% benchmark: https://tradethatswing.com/opening-range-breakout-strategy-up-400-this-year
 - Replication of the ORB paper net of costs: https://www.mql5.com/en/blogs/post/776235
+- Zarattini & Aziz (2023), 5-minute ORB on QQQ: https://papers.ssrn.com/sol3/papers.cfm?abstract_id=4416622
+- Zarattini, Barbon & Aziz, ORB on stocks in play: https://papers.ssrn.com/sol3/papers.cfm?abstract_id=4729284
+- Independent QQQ replication with slippage: https://github.com/giovannibrusco/zarattini-2023-orb-qqq
+- Alpaca paper accounts and short selling: https://docs.alpaca.markets/us/docs/paper-trading, https://docs.alpaca.markets/us/docs/margin-and-short-selling
 
 Nothing here is investment advice. Futures trading can lose more than the amount deposited.

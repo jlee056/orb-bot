@@ -6,7 +6,7 @@
 ![Python](https://img.shields.io/badge/python-3.9%2B-blue)
 ![Broker](https://img.shields.io/badge/broker-Interactive%20Brokers-red)
 
-**[Read the logbook](docs/LOGBOOK.md)** for the full build history, the 800-day backtest, and every chart. **[Forward record](docs/FORWARD.md)**: what the bot would have done each day since the settings were frozen, updated automatically after every close. **[Paper trading record](docs/PAPER.md)**: orders the bot places in an Alpaca practice account on QQQ.
+**[Read the logbook](docs/LOGBOOK.md)** for the full build history, the 800-day backtest, and every chart. **[Forward record](docs/FORWARD.md)**: what the bot would have done each day since the settings were frozen, updated automatically after every close. **[Paper trading record](docs/PAPER.md)**: orders the bot places in an Alpaca practice account on QQQ. **[Variants](docs/VARIANTS.md)**: three versions of the rules (the base, a 5-minute long-and-short rule, and the base plus shorts) running side by side in separate practice accounts.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/charts/equity-dark.png">
@@ -201,7 +201,8 @@ The `vix` column lets you analyze which VIX environments produce the best result
 - `forward_run.py` — after each close, replays the day on delayed Yahoo data and appends to `forward/forward_log.csv`
 - `forward_report.py` — rebuilds `docs/FORWARD.md` and its chart from that log
 - `forward_alert.py` — morning phone alert (ntfy) when a breakout fires
-- `alpaca_bot.py` — places the bot's trades in an Alpaca **paper** account on QQQ (morning entry, afternoon close and record)
+- `alpaca_bot.py` — places the bot's trades in an Alpaca **paper** account on QQQ (morning entry, afternoon close and record); `--variant orb5|both60` runs a variant in its own account
+- `variants.py` — the side-by-side variants and their frozen settings; `variants_report.py` builds `docs/VARIANTS.md`
 - `alpaca_io.py` — the only file that talks to Alpaca; paper trading is hard-coded, with no live switch
 - `paper_report.py` — rebuilds `docs/PAPER.md` and its chart from `paper/alpaca_trades.csv`
 - `.github/workflows/` — runs the forward and paper-trading jobs on GitHub's servers every weekday
