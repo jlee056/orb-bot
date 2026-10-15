@@ -1,1 +1,2 @@
 date,config_id,bar_min,range_high,range_low,range_pct,flags,outcome,entry,stop,target,exit,pts,risk_pts,R,usd_1c,over_risk,logged_at
+2026-10-15,09fbe296,1,29871.00,29622.50,0.00835,below_ema;range_wide,filtered_dir,,,,,,,,,,2026-10-15T21:45Z
