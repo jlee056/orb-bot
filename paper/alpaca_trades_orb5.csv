@@ -1,2 +1,3 @@
 date,config_id,source,outcome,shares,entry,stop,target,exit,profit,R,shares_5k,profit_5k,sim_outcome,sim_R,logged_at
 2026-10-15,baa9b9f8,alpaca-paper/alpaca-iex,stop,34,717.56,719.38,701.34,719.20,-55.67,-0.902,6,-9.82,stop,-1.012,2026-10-15T20:03Z
+2026-10-16,baa9b9f8,alpaca-paper/alpaca-iex,target,27,723.18,725.69,709.41,709.40,372.00,5.484,6,82.67,target,9.853,2026-10-16T20:03Z
