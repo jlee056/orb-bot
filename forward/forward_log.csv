@@ -3,3 +3,4 @@ date,config_id,bar_min,range_high,range_low,range_pct,flags,outcome,entry,stop,t
 2026-10-13,00c5314f,1,30814.75,30591.25,0.00728,,no_breakout,,,,,,,,,,2026-10-13T21:45Z
 2026-10-14,00c5314f,1,30660.75,30454.50,0.00675,,downside_break,,,,,,,,,,2026-10-14T21:45Z
 2026-10-15,00c5314f,1,29871.00,29622.50,0.00835,below_ema;range_wide,filtered,,,,,,,,,,2026-10-15T21:45Z
+2026-10-16,00c5314f,1,30045.75,29786.75,0.00866,friday;below_ema;range_wide,filtered,,,,,,,,,,2026-10-16T21:45Z
