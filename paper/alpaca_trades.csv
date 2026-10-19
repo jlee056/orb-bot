@@ -4,3 +4,4 @@ date,config_id,source,outcome,shares,entry,stop,target,exit,profit,R,shares_5k,p
 2026-10-14,e0a01dbd,alpaca-paper/alpaca-iex,downside_break,,,,,,,,,,downside_break,,2026-10-14T20:03Z
 2026-10-15,e0a01dbd,alpaca-paper/alpaca-iex,filtered,,,,,,,,,,filtered,,2026-10-15T20:03Z
 2026-10-16,e0a01dbd,alpaca-paper/alpaca-iex,filtered,,,,,,,,,,filtered,,2026-10-16T20:03Z
+2026-10-19,e0a01dbd,alpaca-paper/alpaca-iex,filtered,,,,,,,,,,filtered,,2026-10-19T20:03Z
