@@ -1,3 +1,4 @@
 date,config_id,bar_min,range_high,range_low,range_pct,flags,outcome,entry,stop,target,exit,pts,risk_pts,R,usd_1c,over_risk,logged_at
 2026-10-15,09fbe296,1,29871.00,29622.50,0.00835,below_ema;range_wide,filtered_dir,,,,,,,,,,2026-10-15T21:45Z
 2026-10-16,09fbe296,1,30045.75,29786.75,0.00866,friday;below_ema;range_wide,target,29700.50,29916.25,29657.25,29657.25,43.25,215.75,0.200,85.26,Y,2026-10-16T21:45Z
+2026-10-19,09fbe296,1,29869.00,29653.75,0.00723,below_ema;gap,filtered_dir,,,,,,,,,,2026-10-19T21:45Z
