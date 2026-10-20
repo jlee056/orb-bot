@@ -27,9 +27,9 @@ Three versions of the strategy run at the same time, each in its own Alpaca pape
 
 | Variant | Days | Signals | Win rate | Avg R | Total R |
 |---|---|---|---|---|---|
-| `base` | 6 | 0 | | | |
-| `orb5` | 3 | 3 | 33% | +2.08 | +6.25 |
-| `both60` | 3 | 1 | 100% | +0.20 | +0.20 |
+| `base` | 7 | 0 | | | |
+| `orb5` | 4 | 4 | 25% | +1.31 | +5.25 |
+| `both60` | 4 | 1 | 100% | +0.20 | +0.20 |
 
 ## Rules for judging, fixed in advance
 
