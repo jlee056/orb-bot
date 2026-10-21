@@ -3,3 +3,4 @@ date,config_id,bar_min,range_high,range_low,range_pct,flags,outcome,entry,stop,t
 2026-10-16,09fbe296,1,30045.75,29786.75,0.00866,friday;below_ema;range_wide,target,29700.50,29916.25,29657.25,29657.25,43.25,215.75,0.200,85.26,Y,2026-10-16T21:45Z
 2026-10-19,09fbe296,1,29869.00,29653.75,0.00723,below_ema;gap,filtered_dir,,,,,,,,,,2026-10-19T21:45Z
 2026-10-20,09fbe296,1,29883.00,29391.75,0.01658,below_ema;range_wide,no_breakout,,,,,,,,,,2026-10-20T21:45Z
+2026-10-21,09fbe296,1,29934.25,29771.00,0.00547,below_ema,filtered_dir,,,,,,,,,,2026-10-21T21:45Z

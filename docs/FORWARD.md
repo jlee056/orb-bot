@@ -2,7 +2,7 @@
 
 What the bot would have done each trading day since the settings were frozen on 2026-10-12. This page is rebuilt automatically after every close by `forward_run.py` and `forward_report.py`. No orders are placed; prices are Yahoo's NQ futures data, which runs about 10 minutes late. The log replays finished sessions, so the delay does not affect it.
 
-**Days logged:** 7 (2026-10-12 to 2026-10-20)  
+**Days logged:** 8 (2026-10-12 to 2026-10-21)  
 **Signals taken:** 0  
 
 20 more signals needed before this record says anything about the backtest. With fewer than 20 trades, any result is mostly luck.
@@ -11,6 +11,7 @@ What the bot would have done each trading day since the settings were frozen on 
 
 | Date | Outcome | Entry | Stop | Target | Exit | Result (R) | Profit, 1 contract | Over $75 risk budget |
 |---|---|---|---|---|---|---|---|---|
+| 2026-10-21 | Skipped (trend filter) |  |  |  |  |  |  |  |
 | 2026-10-20 | Skipped (trend filter) |  |  |  |  |  |  |  |
 | 2026-10-19 | Skipped (trend filter) |  |  |  |  |  |  |  |
 | 2026-10-16 | Skipped (trend filter) |  |  |  |  |  |  |  |
