@@ -3,3 +3,4 @@ date,config_id,source,outcome,shares,entry,stop,target,exit,profit,R,shares_5k,p
 2026-10-16,f050443e,alpaca-paper/alpaca-iex,target,14,717.34,722.74,716.85,716.78,7.78,0.103,6,3.33,target,0.163,2026-10-16T20:03Z
 2026-10-19,f050443e,alpaca-paper/alpaca-iex,filtered_dir,,,,,,,,,,filtered_dir,,2026-10-19T20:03Z
 2026-10-20,f050443e,alpaca-paper/alpaca-iex,no_breakout,,,,,,,,,,no_breakout,,2026-10-20T20:03Z
+2026-10-21,f050443e,alpaca-paper/alpaca-iex,filtered_dir,,,,,,,,,,filtered_dir,,2026-10-21T20:03Z

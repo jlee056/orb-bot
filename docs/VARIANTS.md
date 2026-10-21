@@ -12,9 +12,9 @@ Three versions of the strategy run at the same time, each in its own Alpaca pape
 
 | Variant | Days | Trades | Win rate | Avg R | Total R | Backtest avg R | Fill gap (R) | Status |
 |---|---|---|---|---|---|---|---|---|
-| `base` | 7 | 0 | | | | +0.084 | | running, next review at 50 trades |
-| `orb5` | 4 | 4 | 25% | +0.66 | +2.63 | +0.081 | -1.04 | running, next review at 50 trades |
-| `both60` | 4 | 1 | 100% | +0.10 | +0.10 | +0.053 | -0.06 | running, next review at 50 trades |
+| `base` | 8 | 0 | | | | +0.084 | | running, next review at 50 trades |
+| `orb5` | 5 | 5 | 20% | +0.32 | +1.61 | +0.081 | -0.83 | running, next review at 50 trades |
+| `both60` | 5 | 1 | 100% | +0.10 | +0.10 | +0.053 | -0.06 | running, next review at 50 trades |
 
 *Fill gap* is the broker's result minus what the engine expected on the same day. Alpaca's paper fills do not charge slippage, so a gap near zero is expected; real trading would be worse.
 
