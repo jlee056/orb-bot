@@ -9,3 +9,4 @@ date,config_id,source,outcome,shares,entry,stop,target,exit,profit,R,shares_5k,p
 2026-10-26,baa9b9f8,alpaca-paper/alpaca-iex,still_open,42,707.70,705.64,722.20,,,,,,eod,3.790,2026-10-26T21:18Z
 2026-10-27,baa9b9f8,alpaca-paper/alpaca-iex,missed,,,,,,,,,,stop,-1.010,2026-10-27T21:05Z
 2026-10-28,baa9b9f8,alpaca-paper/alpaca-iex,missed,,,,,,,,,,stop,-1.023,2026-10-28T21:29Z
+2026-10-29,baa9b9f8,alpaca-paper/alpaca-iex,missed,,,,,,,,,,stop,-1.004,2026-10-29T21:31Z
