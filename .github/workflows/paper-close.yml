@@ -220,7 +220,9 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add paper/alpaca_trades.csv paper/alpaca_trades_orb5.csv paper/alpaca_trades_both60.csv
           git add docs/PAPER.md docs/VARIANTS.md
-          git add docs/charts/paper.png docs/charts/paper-dark.png docs/charts/variants.png docs/charts/variants-dark.png 2>/dev/null || true
+          for chart in docs/charts/paper.png docs/charts/paper-dark.png docs/charts/variants.png docs/charts/variants-dark.png; do
+            if [ -f "$chart" ]; then git add -- "$chart"; fi
+          done
           if git diff --cached --quiet; then
             echo "Nothing new to commit."
           else
