@@ -12,15 +12,15 @@ Three versions of the strategy run at the same time, each in its own Alpaca pape
 
 | Variant | Days | Trades | Win rate | Avg R | Total R | Backtest avg R | Fill gap (R) | Status |
 |---|---|---|---|---|---|---|---|---|
-| `base` | 14 | 0 | | | | +0.084 | | running, next review at 50 trades |
-| `orb5` | 11 | 8 | 25% | +0.30 | +2.40 | +0.081 | -0.64 | running, next review at 50 trades |
-| `both60` | 11 | 2 | 100% | +0.32 | +0.63 | +0.053 | -0.01 | running, next review at 50 trades |
+| `base` | 15 | 0 | | | | +0.084 | | running, next review at 50 trades |
+| `orb5` | 12 | 9 | 22% | +0.16 | +1.41 | +0.081 | -0.57 | running, next review at 50 trades |
+| `both60` | 12 | 2 | 100% | +0.32 | +0.63 | +0.053 | -0.01 | running, next review at 50 trades |
 
 Execution checks (recorded outcomes):
 
-- `base`: 0 unresolved, 1 missed signals, 0 late closes; record through 2026-10-29.
-- `orb5`: 0 unresolved, 3 missed signals, 1 late closes; record through 2026-10-29.
-- `both60`: 0 unresolved, 1 missed signals, 0 late closes; record through 2026-10-29.
+- `base`: 0 unresolved, 1 missed signals, 0 late closes; record through 2026-10-30.
+- `orb5`: 0 unresolved, 3 missed signals, 1 late closes; record through 2026-10-30.
+- `both60`: 0 unresolved, 1 missed signals, 0 late closes; record through 2026-10-30.
 
 A late close is an execution failure, even if its profit is positive. Results include actual gross fills; account equity can differ because of fees.
 
