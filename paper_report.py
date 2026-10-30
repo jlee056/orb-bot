@@ -14,7 +14,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.join(HERE, "docs", "PAPER.md")
 OTHER = os.path.join(HERE, "paper", "other_orders.csv")   # orders in the account that the strategy did not choose
 
-OUTCOMES = {"target": "Hit target", "stop": "Hit stop", "eod": "Closed before the bell",
+OUTCOMES = {"late_close": "Closed after the intended session", "target": "Hit target", "stop": "Hit stop", "eod": "Closed before the bell",
             "no_breakout": "No breakout", "downside_break": "Broke down first", "filtered": "Skipped (trend filter)",
             "no_room": "No room to target", "missed": "MISSED: engine traded, no order sent",
             "order_not_filled": "Order not filled", "still_open": "Position still open", "no_data": "No data"}

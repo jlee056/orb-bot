@@ -1,7 +1,7 @@
 """Backup trigger for the GitHub jobs, run by Windows Task Scheduler on the always-on PC.
 
 GitHub's own scheduler can start jobs late or skip them. This script checks whether today's
-run of each job has started inside its time window and, if not, starts it with `gh workflow run`.
+run of each job has started inside its time window and, if not, starts it with the GitHub REST API.
 The jobs themselves are safe to start more than once (one order and one push per day).
 
   python watchdog.py morning   paper-entry + forward-alert   (window 06:00 to 11:55 ET; the task
@@ -12,12 +12,15 @@ The jobs themselves are safe to start more than once (one order and one push per
   python watchdog.py check-morning   after 12:20 ET: phone alert if a morning message is missing
   python watchdog.py check-close     after 16:20 ET: phone alert if the day's result is missing
 
-Needs the GitHub CLI (`gh`) logged in on this PC. Writes watchdog.log next to this file.
+Uses the stored GitHub git credential (or GH_TOKEN/GITHUB_TOKEN); never launches gh. Writes watchdog.log next to this file.
 """
 import json
 import os
 import subprocess
 import sys
+import urllib.request
+import urllib.error
+import time
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -39,20 +42,51 @@ def log(msg):
         fh.write(line + "\n")
 
 
-def gh(*args):
-    return subprocess.run(["gh", *args], capture_output=True, text=True, creationflags=NO_WINDOW, timeout=120)
+def github_token():
+    token = os.getenv("GH_TOKEN") or os.getenv("GITHUB_TOKEN")
+    if token:
+        return token
+    env = dict(os.environ, GIT_TERMINAL_PROMPT="0", GCM_INTERACTIVE="Never")
+    result = subprocess.run(["git", "credential", "fill"], input="protocol=https\nhost=github.com\n\n",
+                            capture_output=True, text=True, timeout=30,
+                            creationflags=NO_WINDOW, env=env, cwd=HERE)
+    if result.returncode:
+        raise RuntimeError("Stored GitHub credential unavailable")
+    for line in result.stdout.splitlines():
+        if line.startswith("password="):
+            return line.split("=", 1)[1]
+    raise RuntimeError("No token returned by git credential helper")
+
+
+def github(path, payload=None):
+    data = None if payload is None else json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request("https://api.github.com/" + path, data=data,
+                                 headers={"Authorization": "Bearer " + github_token(),
+                                          "Accept": "application/vnd.github+json",
+                                          "Content-Type": "application/json"})
+    for attempt in range(3):
+        try:
+            with urllib.request.urlopen(req, timeout=30) as response:
+                body = response.read()
+                return json.loads(body) if body else None
+        except urllib.error.HTTPError as exc:
+            if exc.code not in (429, 500, 502, 503, 504) or attempt == 2:
+                raise RuntimeError(f"GitHub API HTTP {exc.code}") from None
+        except (OSError, TimeoutError):
+            if attempt == 2:
+                raise RuntimeError("GitHub API network request failed") from None
+        time.sleep(2 ** attempt)
 
 
 def started_in_window(workflow, lo, hi, today):
     """True if a run of this workflow began today inside the window and is running or succeeded."""
-    r = gh("run", "list", "--repo", REPO, "--workflow", workflow, "--limit", "20",
-           "--json", "status,conclusion,createdAt,event")
-    if r.returncode != 0:
-        raise RuntimeError(r.stderr.strip()[:200])
-    for run in json.loads(r.stdout or "[]"):
-        t = datetime.fromisoformat(run["createdAt"].replace("Z", "+00:00")).astimezone(ET)
+    runs = github(f"repos/{REPO}/actions/workflows/{workflow}/runs?per_page=50")["workflow_runs"]
+    for run in runs:
+        t = datetime.fromisoformat(run["created_at"].replace("Z", "+00:00")).astimezone(ET)
         minute = t.hour * 60 + t.minute
-        alive = run["status"] in ("in_progress", "queued", "requested", "waiting", "pending") or \
+        age = (datetime.now(ET) - t).total_seconds()
+        alive = run["status"] == "in_progress" or \
+            (run["status"] in ("queued", "requested", "waiting", "pending") and age < 180) or \
             (run["status"] == "completed" and run["conclusion"] == "success")
         if t.date() == today and lo <= minute <= hi and alive:
             return True
@@ -97,8 +131,84 @@ def check(which):
     return 0
 
 
+
+def daemon():
+    """Independent hidden login helper: Task Scheduler is a second trigger path.
+
+    An OS file lock prevents two login helpers from running together. All dispatch
+    decisions still consult GitHub, so the tasks and this helper are idempotent.
+    """
+    lock = open(os.path.join(HERE, ".watchdog.lock"), "a+b")
+    lock.seek(0)
+    if not lock.read(1):
+        lock.write(b"0")
+        lock.flush()
+    lock.seek(0)
+    import msvcrt
+    try:
+        msvcrt.locking(lock.fileno(), msvcrt.LK_NBLCK, 1)
+    except OSError:
+        log("daemon: another helper already holds the lock")
+        lock.close()
+        return 0
+    log(f"daemon: started PID {os.getpid()}")
+    last = {}
+    while True:
+        now = datetime.now(ET)
+        minute = now.hour * 60 + now.minute
+        due = []
+        if now.weekday() < 5:
+            if 8 * 60 + 45 <= minute <= 11 * 60 + 55:
+                due.append(("morning", 5))
+            if 13 * 60 <= minute <= 15 * 60 + 45:
+                due.append(("close", 15))
+            if 17 * 60 + 30 <= minute <= 23 * 60 + 30:
+                due.append(("eod", 30))
+            for mode, at in (("check-ready", 9 * 60 + 20), ("check-morning", 12 * 60 + 25),
+                             ("check-close", 16 * 60 + 25)):
+                if at <= minute < at + 5:
+                    due.append((mode, 1440))
+        for mode, period in due:
+            slot = (now.date(), minute // period)
+            if last.get(mode) == slot:
+                continue
+            try:
+                sys.argv = [__file__, mode]
+                result = main()
+                log(f"daemon: {mode} finished with {result}")
+                last[mode] = slot
+            except Exception as exc:
+                log(f"daemon: {mode} failed: {type(exc).__name__}: {exc}")
+        heartbeat = (now.date(), now.hour)
+        if last.get("heartbeat") != heartbeat:
+            log("daemon: heartbeat")
+            last["heartbeat"] = heartbeat
+        time.sleep(30)
+
+
 def main():
     group = sys.argv[1] if len(sys.argv) > 1 else ""
+    if group == "daemon":
+        return daemon()
+    if group == "probe":
+        result = github(f"repos/{REPO}/actions/workflows/paper-entry.yml/runs?per_page=1")
+        log(f"probe: REST authentication succeeded; {len(result['workflow_runs'])} run returned")
+        return 0
+    if group == "check-ready":
+        now = datetime.now(ET)
+        if now.weekday() >= 5 or not 9 * 60 + 15 <= now.hour * 60 + now.minute <= 9 * 60 + 30:
+            return 0
+        if started_in_window("paper-entry.yml", 6 * 60, 9 * 60 + 25, now.date()):
+            log("check-ready: pre-open entry workflow is active or completed")
+            return 0
+        github(f"repos/{REPO}/actions/workflows/paper-entry.yml/dispatches", {"ref": "main"})
+        import config  # loads local alert configuration
+        from forward_alert import push
+        push(f"ORB PROBLEM {now:%Y-%m-%d}: morning recovery",
+             "No timely morning entry run was found. A backup was dispatched before the 9:35 entry.",
+             "rotating_light")
+        log("check-ready: missing morning run; recovery dispatched")
+        return 1
     if group in ("check-morning", "check-close"):
         return check(group)
     if group not in GROUPS:
@@ -110,16 +220,18 @@ def main():
     if now.weekday() >= 5 or not lo <= minute <= hi:
         log(f"{group}: outside the window, nothing to do")
         return 0
+    failed = False
     for wf in workflows:
         try:
             if started_in_window(wf, lo, hi, now.date()):
                 log(f"{group}: {wf} already started today")
                 continue
-            r = gh("workflow", "run", wf, "--repo", REPO)
-            log(f"{group}: STARTED {wf}" if r.returncode == 0 else f"{group}: FAILED to start {wf}: {r.stderr.strip()[:200]}")
+            github(f"repos/{REPO}/actions/workflows/{wf}/dispatches", {"ref": "main"})
+            log(f"{group}: STARTED {wf} via REST API")
         except Exception as e:
-            log(f"{group}: error checking {wf}: {e}")
-    return 0
+            failed = True
+            log(f"{group}: error checking {wf}: {type(e).__name__}: {e}")
+    return 1 if failed else 0
 
 
 if __name__ == "__main__":

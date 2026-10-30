@@ -9,8 +9,10 @@ Also holds two stand-ins used before keys exist and in tests:
   FakeBroker  - same order methods, fills simulated from bars
 """
 import os
+import time as clock
 from datetime import date, datetime, time, timedelta
 from types import SimpleNamespace
+from zoneinfo import ZoneInfo
 
 import numpy as np
 import pandas as pd
@@ -137,8 +139,10 @@ class AlpacaBroker:
         from alpaca.common.exceptions import APIError
         try:
             return float(self.client.get_open_position(symbol).qty)
-        except APIError:
-            return 0.0
+        except APIError as exc:
+            if exc.status_code == 404:
+                return 0.0
+            raise
 
     def has_order(self, client_order_id):
         """True if an order with this client id was ever submitted (filled, open or cancelled)."""
@@ -146,8 +150,10 @@ class AlpacaBroker:
         try:
             self.client.get_order_by_client_id(client_order_id)
             return True
-        except APIError:
-            return False
+        except APIError as exc:
+            if exc.status_code == 404:
+                return False
+            raise
 
     def open_orders(self, symbol=SYMBOL):
         from alpaca.trading.enums import QueryOrderStatus
@@ -175,20 +181,54 @@ class AlpacaBroker:
                                  stop_loss=StopLossRequest(stop_price=round(float(stop), 2)))
         return str(self.client.submit_order(req).id)
 
-    def flatten(self, symbol=SYMBOL):
-        """Cancel open orders for the symbol, then close any position at market."""
-        for o in self.open_orders(symbol):
-            self.client.cancel_order_by_id(o.id)
-        if self.position_qty(symbol) != 0:
-            self.client.close_position(symbol)
+    def flatten(self, symbol=SYMBOL, timeout=90):
+        """Wait for cancellations to release shares, then submit one close and verify it.
 
-    def day_orders(self, day, symbol=SYMBOL):
+        An accepted after-hours close is left queued and reported as unresolved. It is
+        never cancelled and resubmitted just because a fill has not arrived yet.
+        """
+        from alpaca.common.exceptions import APIError
+        deadline = clock.monotonic() + timeout
+        initial = self.open_orders(symbol)
+        # A prior standalone closing market order must be allowed to fill.
+        closing = [o for o in initial if str(getattr(o.type, "value", o.type)) == "market"
+                   and not str(getattr(o.order_class, "value", o.order_class)) == "bracket"]
+        if not closing:
+            for order in initial:
+                try:
+                    self.client.cancel_order_by_id(order.id)
+                except APIError as exc:
+                    if exc.status_code not in (404, 422):
+                        raise
+            while self.open_orders(symbol):
+                if clock.monotonic() >= deadline:
+                    raise RuntimeError("QQQ cancellations did not complete; close not submitted")
+                clock.sleep(1)
+            while self.position_qty(symbol) != 0:
+                try:
+                    self.client.close_position(symbol)
+                    break
+                except APIError as exc:
+                    # Reservations can lag behind the cancelled order status.
+                    if exc.code != 40310000 or clock.monotonic() >= deadline:
+                        raise
+                    clock.sleep(1)
+        while clock.monotonic() < deadline:
+            if self.position_qty(symbol) == 0 and not self.open_orders(symbol):
+                return True
+            clock.sleep(2)
+        return False
+
+    def day_orders(self, day, symbol=SYMBOL, through=None):
         """All of the day's orders for the symbol, bracket legs flattened in, as plain records."""
         from alpaca.trading.enums import QueryOrderStatus
         from alpaca.trading.requests import GetOrdersRequest
         after = pd.Timestamp(day, tz=TZ).tz_convert("UTC").to_pydatetime()
+        until = pd.Timestamp(through or (day + timedelta(days=1)), tz=TZ).tz_convert("UTC").to_pydatetime()
         raw = self.client.get_orders(GetOrdersRequest(status=QueryOrderStatus.ALL, symbols=[symbol], after=after,
-                                                      nested=True, limit=200))
+                                                      until=until, nested=True, limit=500))
+        if len(raw) == 500:
+            raise RuntimeError("Order history reached its limit; refusing an incomplete reconciliation")
         out = []
 
         def add(o, parent=None):
@@ -202,7 +242,25 @@ class AlpacaBroker:
                 add(leg, str(o.id))
         for o in raw:
             add(o)
-        return out
+        unique = {}
+        for order in out:
+            if order.id not in unique or order.parent is not None:
+                unique[order.id] = order
+        return list(unique.values())
+
+    def trade_orders(self, day, client_order_id):
+        # Include next-day exits when an end-of-day close was queued after hours.
+        orders = self.day_orders(day, through=datetime.now(ZoneInfo(TZ)).date() + timedelta(days=1))
+        parent = next((o for o in orders if o.client_order_id == client_order_id), None)
+        if parent is None or parent.filled_at is None:
+            return orders
+        later = [o.filled_at for o in orders if o.parent is None and o.client_order_id
+                 and o.client_order_id.startswith(("orb-", "orb5-", "both60-"))
+                 and o.filled_at is not None and o.filled_at > parent.filled_at]
+        if later:
+            boundary = min(later)
+            orders = [o for o in orders if o.filled_at is None or o.filled_at < boundary]
+        return orders
 
 
 class FakeBroker:

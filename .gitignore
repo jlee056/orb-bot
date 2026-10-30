@@ -13,3 +13,6 @@ backtest_results.csv
 .claude/
 graphify-out/
 watchdog.log
+
+# Local singleton lock for the hidden login watchdog
+.watchdog.lock

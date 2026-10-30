@@ -70,7 +70,16 @@ def push(title, body, tags="chart_with_upwards_trend", dry=False, once=True):
         return
     req = urllib.request.Request(f"https://ntfy.sh/{topic}", data=body.encode("utf-8"),
                                  headers={"Title": title, "Tags": tags})
-    urllib.request.urlopen(req, timeout=20).read()
+    for attempt in range(3):
+        try:
+            urllib.request.urlopen(req, timeout=20).read()
+            return True
+        except Exception as exc:
+            # An alert outage must never turn an accepted order into another entry attempt.
+            print(f"Push delivery failed (attempt {attempt + 1}/3): {type(exc).__name__}")
+            if attempt < 2:
+                time.sleep(2 ** attempt)
+    return False
 
 
 def today_bars(df1, day, drop_forming=False):

@@ -8,9 +8,9 @@ name: Paper trade close and record (Alpaca, QQQ)
 #   trade*   one per variant (variants.py), each with only its own account's
 #            Alpaca keys, read-only token, packages installed by exact file hash.
 #            It uploads NO files. The only thing it hands on is one line of text
-#            (the day's log row) as a job output.
+#            (bounded JSON row changes) as a job output.
 #   report   no secrets, read-only token, fresh checkout. Treats those lines as
-#            untrusted: each is appended to its committed log and the result must
+#            untrusted: only unresolved rows may change and the result must
 #            pass .github/scripts/validate_paper_log.sh before anything is built
 #            or uploaded. Runs even if one variant's job failed.
 #   publish  write token, runs no installed code, copies in named files only.
@@ -58,14 +58,10 @@ jobs:
           ALPACA_SECRET_KEY: ${{ secrets.ALPACA_SECRET_KEY }}
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
         run: python -u alpaca_bot.py close
-      - name: Hand on the new row (one line of text, no files)
+      - name: Hand on validated row changes (no files)
         id: emit
-        run: |
-          set -euo pipefail
-          old_n="$(git show HEAD:paper/alpaca_trades.csv | tr -d '\r' | awk 'END { print NR }')"
-          row="$(tr -d '\r' < paper/alpaca_trades.csv | awk -v n="$old_n" 'NR == n + 1')"
-          echo "row=${row}" >> "$GITHUB_OUTPUT"
-          if [ -n "$row" ]; then echo "One new row handed on."; else echo "No new row today."; fi
+        if: always()
+        run: python paper_log.py emit paper/alpaca_trades.csv
 
   trade_orb5:
     runs-on: ubuntu-latest
@@ -91,14 +87,10 @@ jobs:
           ALPACA_SECRET_KEY: ${{ secrets.ALPACA_SECRET_ORB5 }}
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
         run: python -u alpaca_bot.py close --variant orb5
-      - name: Hand on the new row (one line of text, no files)
+      - name: Hand on validated row changes (no files)
         id: emit
-        run: |
-          set -euo pipefail
-          old_n="$(git show HEAD:paper/alpaca_trades_orb5.csv | tr -d '\r' | awk 'END { print NR }')"
-          row="$(tr -d '\r' < paper/alpaca_trades_orb5.csv | awk -v n="$old_n" 'NR == n + 1')"
-          echo "row=${row}" >> "$GITHUB_OUTPUT"
-          if [ -n "$row" ]; then echo "One new row handed on."; else echo "No new row today."; fi
+        if: always()
+        run: python paper_log.py emit paper/alpaca_trades_orb5.csv
 
   trade_both60:
     runs-on: ubuntu-latest
@@ -124,14 +116,10 @@ jobs:
           ALPACA_SECRET_KEY: ${{ secrets.ALPACA_SECRET_BOTH60 }}
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
         run: python -u alpaca_bot.py close --variant both60
-      - name: Hand on the new row (one line of text, no files)
+      - name: Hand on validated row changes (no files)
         id: emit
-        run: |
-          set -euo pipefail
-          old_n="$(git show HEAD:paper/alpaca_trades_both60.csv | tr -d '\r' | awk 'END { print NR }')"
-          row="$(tr -d '\r' < paper/alpaca_trades_both60.csv | awk -v n="$old_n" 'NR == n + 1')"
-          echo "row=${row}" >> "$GITHUB_OUTPUT"
-          if [ -n "$row" ]; then echo "One new row handed on."; else echo "No new row today."; fi
+        if: always()
+        run: python paper_log.py emit paper/alpaca_trades_both60.csv
 
   report:
     needs: [trade, trade_orb5, trade_both60]
@@ -155,17 +143,9 @@ jobs:
           ROW_BOTH60: ${{ needs.trade_both60.outputs.row }}
         run: |
           set -euo pipefail
-          add() {
-            local row="$1" log="$2"
-            if [ -z "$row" ]; then echo "No new row for $log."; return 0; fi
-            cp "$log" "$RUNNER_TEMP/candidate.csv"
-            printf '%s\n' "$row" >> "$RUNNER_TEMP/candidate.csv"
-            bash .github/scripts/validate_paper_log.sh "$RUNNER_TEMP/candidate.csv" "$log" "$RUNNER_TEMP/checked.csv"
-            cp "$RUNNER_TEMP/checked.csv" "$log"
-          }
-          add "$ROW_BASE" paper/alpaca_trades.csv
-          add "$ROW_ORB5" paper/alpaca_trades_orb5.csv
-          add "$ROW_BOTH60" paper/alpaca_trades_both60.csv
+          PAPER_ROWS="$ROW_BASE" python3 paper_log.py merge paper/alpaca_trades.csv
+          PAPER_ROWS="$ROW_ORB5" python3 paper_log.py merge paper/alpaca_trades_orb5.csv
+          PAPER_ROWS="$ROW_BOTH60" python3 paper_log.py merge paper/alpaca_trades_both60.csv
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065   # v5.6.0
         with:
           python-version: "3.13"
@@ -191,6 +171,7 @@ jobs:
 
   publish:
     needs: report
+    if: always() && needs.report.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:

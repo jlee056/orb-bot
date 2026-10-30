@@ -1,0 +1,40 @@
+name: Paper account audit (read only)
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - variant: base
+            key: ALPACA_API_KEY
+            secret: ALPACA_SECRET_KEY
+          - variant: orb5
+            key: ALPACA_KEY_ORB5
+            secret: ALPACA_SECRET_ORB5
+          - variant: both60
+            key: ALPACA_KEY_BOTH60
+            secret: ALPACA_SECRET_BOTH60
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.13"
+      - run: pip install --require-hashes -r requirements-paper.lock
+      - name: Read account positions and historical order evidence
+        env:
+          ALPACA_API_KEY: ${{ secrets[matrix.key] }}
+          ALPACA_SECRET_KEY: ${{ secrets[matrix.secret] }}
+        run: python -u paper_audit.py "${{ matrix.variant }}"

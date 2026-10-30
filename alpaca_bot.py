@@ -19,6 +19,7 @@ import csv
 import dataclasses
 import math
 import os
+import tempfile
 import sys
 import time
 from datetime import date, datetime, timezone
@@ -144,9 +145,9 @@ def logged(path):
         return {r["date"] for r in csv.DictReader(fh)}
 
 
-def build_row(broker, data, day_date, p, vix):
+def build_row(broker, data, day_date, p, vix, previous=None):
     """One row for the day: what the broker actually did, next to what the engine expected."""
-    day = base_day(data, day_date, vix)
+    day = None if previous else base_day(data, day_date, vix)
     sim = None
     if day is not None:
         b1 = minute_bars(data, day_date)
@@ -157,6 +158,8 @@ def build_row(broker, data, day_date, p, vix):
         return "" if x is None or (isinstance(x, float) and np.isnan(x)) else f"{x:.{nd}f}"
 
     row = {c: "" for c in COLUMNS}
+    if previous:
+        row.update(previous)
     row.update(date=day_date.isoformat(), config_id=config_id(p), source=f"{broker.name}/{data.name}",
                logged_at=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%MZ"))
     if sim is not None:
@@ -164,9 +167,12 @@ def build_row(broker, data, day_date, p, vix):
         if sim["dir"] != 0:
             row["sim_R"] = f(sim["pts"] / sim["risk"], 3)
 
-    orders = broker.day_orders(day_date)
+    orders = (broker.trade_orders(day_date, order_id(day_date)) if hasattr(broker, "trade_orders")
+              else broker.day_orders(day_date))
     parent = next((o for o in orders if o.client_order_id == order_id(day_date)), None)
     if parent is None:
+        if previous:
+            raise RuntimeError(f"Historical entry {order_id(day_date)} not found; preserving old row")
         if sim is None:
             row["outcome"] = "no_data"
         else:
@@ -190,8 +196,12 @@ def build_row(broker, data, day_date, p, vix):
     entry, qty = parent.filled_avg_price, parent.filled_qty
     row.update(shares=f(qty, 0), entry=f(entry), stop=f(sl.stop_price if sl else None),
                target=f(tp.limit_price if tp else None))
-    if not sold:
+    if sold > qty + 0.000001:
+        raise RuntimeError("Exit quantity exceeds the entry; manual order attribution needs review")
+    if sold < qty - 0.000001:
         row["outcome"] = "still_open"
+        for field in ("exit", "profit", "R", "shares_5k", "profit_5k"):
+            row[field] = ""
         return row
     exit_px = sum(o.filled_qty * o.filled_avg_price for o in sells) / sold
     if tp is not None and tp.filled_qty:
@@ -199,7 +209,8 @@ def build_row(broker, data, day_date, p, vix):
     elif sl is not None and sl.filled_qty:
         row["outcome"] = "stop"
     else:
-        row["outcome"] = "eod"
+        filled_dates = [pd.Timestamp(o.filled_at).tz_convert(TZ).date() for o in sells if o.filled_at is not None]
+        row["outcome"] = "late_close" if any(d > day_date for d in filled_dates) else "eod"
     qty_5k = max(0, math.floor(SMALL_ACCOUNT / entry))
     move = d * (exit_px - entry)
     row.update(exit=f(exit_px), profit=f(move * sold), shares_5k=str(qty_5k), profit_5k=f(move * qty_5k))
@@ -216,6 +227,43 @@ def append_row(path, row):
         if new:
             w.writeheader()
         w.writerow(row)
+
+
+
+def read_rows(path):
+    if not os.path.isfile(path):
+        return []
+    with open(path, newline="") as fh:
+        return list(csv.DictReader(fh))
+
+
+def upsert_row(path, row):
+    """Atomically replace this date, preserving all other dates and their order."""
+    rows = read_rows(path)
+    by_date = {r["date"]: r for r in rows}
+    by_date[row["date"]] = row
+    folder = os.path.dirname(os.path.abspath(path))
+    os.makedirs(folder, exist_ok=True)
+    fd, temporary = tempfile.mkstemp(dir=folder, suffix=".csv")
+    try:
+        with os.fdopen(fd, "w", newline="") as fh:
+            writer = csv.DictWriter(fh, fieldnames=COLUMNS)
+            writer.writeheader()
+            writer.writerows(by_date[d] for d in sorted(by_date))
+        os.replace(temporary, path)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+
+
+def reconcile_pending(broker, data, p):
+    for old in read_rows(LOG):
+        if old["outcome"] not in ("still_open", "order_not_filled"):
+            continue
+        row = build_row(broker, data, date.fromisoformat(old["date"]), p, None, previous=old)
+        if row["outcome"] != old["outcome"] or row.get("profit") != old.get("profit"):
+            upsert_row(LOG, row)
+            print(f"Reconciled {row['date']}: {result_text(row)}")
 
 
 def result_text(row):
@@ -253,19 +301,18 @@ def mode_entry():
         print("Today's order was already sent; nothing to do.")
         return 0
     if broker.position_qty() != 0 or broker.open_orders():
-        print("A QQQ position or order already exists; not placing another.")
-        return 0
+        push(f"{title}: BLOCKED", "A QQQ position or order already exists; reconciliation is required.",
+             "rotating_light")
+        return 1
 
     candle = p.entry_mode == "candle"
     or_end = E.RTH_OPEN + p.or_min
     # Candle mode enters at the open, so a start more than 5 minutes late is a missed day.
     stop_at = or_end + 5 if candle else p.cutoff + 2
     if now.hour * 60 + now.minute > stop_at:
-        if candle:
-            push(f"{title}: no trade", f"Started too late for the {p.or_min}-minute entry; logged as missed.",
-                 "warning")
+        push(f"{title}: STARTED TOO LATE", "Entry window missed; no late order will be placed.", "warning")
         print("Past the entry window; nothing to do.")
-        return 0
+        return 1
     if candle:
         # The entry bar has to be complete in the data, so the earliest decision is one minute after the range.
         go = pd.Timestamp(today) + pd.Timedelta(minutes=or_end + 1, seconds=5)
@@ -284,6 +331,9 @@ def mode_entry():
         now = pd.Timestamp.now(tz=TZ).tz_localize(None)
         final = now.hour * 60 + now.minute >= stop_at
         try:
+            if broker.has_order(order_id(today)):
+                print("Today's order exists; no additional submission.")
+                return 0
             if day is None:
                 day = base_day(data, today, vix)
             b1 = minute_bars(data, today, upto=now) if day is not None else []
@@ -320,8 +370,7 @@ def mode_entry():
 
 def mode_close():
     if not A.have_keys():
-        print("Alpaca keys are not set; nothing to do.")
-        return 0
+        raise RuntimeError("Alpaca paper keys are not set")
     broker, data, p = A.AlpacaBroker(), A.AlpacaData(), qqq_params()
     now = pd.Timestamp.now(tz=TZ).tz_localize(None)
     today = now.date()
@@ -329,26 +378,31 @@ def mode_close():
     if hours is None:
         print("Market is closed today.")
         return 0
-    if today.isoformat() in logged(LOG):
-        print("Today is already logged.")
-        return 0
     flatten_at = hours[1] - pd.Timedelta(minutes=FLATTEN_BEFORE_CLOSE_MIN)
     wait = (flatten_at - now).total_seconds()
     if wait > 0:
         print(f"Waiting {wait / 60:.0f} min until {flatten_at:%H:%M} ET to flatten...")
         time.sleep(wait)
-    late = pd.Timestamp.now(tz=TZ).tz_localize(None) > hours[1]
-    broker.flatten()
-    time.sleep(30)   # let the closing fill arrive
-
-    # Record once the session's bars are complete.
+    print(f"Before close: {broker.position_qty():g} QQQ; {len(broker.open_orders())} open orders")
+    flat = broker.flatten()  # Always check the account, even if today has a log row.
     remaining = (hours[1] + pd.Timedelta(minutes=3) - pd.Timestamp.now(tz=TZ).tz_localize(None)).total_seconds()
     if remaining > 0:
         time.sleep(remaining)
-    row = build_row(broker, data, today, p, safe_vix())
-    append_row(LOG, row)
-    note = " Started after the close; any open position closes at the next open." if late else ""
-    push(f"{label(today)}: result", result_text(row) + note, "bar_chart")
+    reconcile_pending(broker, data, p)
+    previous = next((r for r in read_rows(LOG) if r["date"] == today.isoformat()), None)
+    if previous is None:
+        row = build_row(broker, data, today, p, safe_vix())
+        upsert_row(LOG, row)
+    else:
+        row = previous
+    qty, open_count = broker.position_qty(), len(broker.open_orders())
+    print(f"Verified account: {qty:g} QQQ; {open_count} open orders")
+    unresolved = any(r["outcome"] == "still_open" for r in read_rows(LOG))
+    if not flat or qty != 0 or open_count or unresolved:
+        push(f"{label(today)}: CLOSE UNRESOLVED", "Paper position/order or unresolved record remains. "
+             "Check the account; a queued after-hours close is not a confirmed fill.", "rotating_light")
+        return 1
+    push(f"{label(today)}: result", result_text(row), "bar_chart")
     return 0
 
 
