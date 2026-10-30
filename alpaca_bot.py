@@ -31,7 +31,7 @@ import alpaca_io as A
 import config
 import orb_engine as E
 import variants
-from forward_alert import push
+from forward_alert import push, already_sent
 from forward_run import config_id, fetch_vix, strategy_params
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -264,6 +264,7 @@ def reconcile_pending(broker, data, p):
         if row["outcome"] != old["outcome"] or row.get("profit") != old.get("profit"):
             upsert_row(LOG, row)
             print(f"Reconciled {row['date']}: {result_text(row)}")
+            push(f"{label(date.fromisoformat(row['date']))}: reconciled", result_text(row), "bar_chart")
 
 
 def result_text(row):
@@ -310,6 +311,9 @@ def mode_entry():
     # Candle mode enters at the open, so a start more than 5 minutes late is a missed day.
     stop_at = or_end + 5 if candle else p.cutoff + 2
     if now.hour * 60 + now.minute > stop_at:
+        if already_sent(f"{title}: no trade"):
+            print("A timely no-trade decision was already sent; no late entry needed.")
+            return 0
         push(f"{title}: STARTED TOO LATE", "Entry window missed; no late order will be placed.", "warning")
         print("Past the entry window; nothing to do.")
         return 1
@@ -363,8 +367,8 @@ def mode_entry():
         except Exception as e:   # one bad poll should not end the morning
             print(f"[{now:%H:%M}] poll failed: {e}")
         if final:
-            push(f"{title}: no trade", "No decision by the cutoff (data unavailable).", "warning")
-            return 0
+            push(f"{title}: DATA UNAVAILABLE", "No decision by the cutoff (data unavailable).", "warning")
+            return 1
         time.sleep(10 if candle else 60)
 
 

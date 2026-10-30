@@ -90,6 +90,27 @@ class CloseTests(unittest.TestCase):
 
 
 class RecordTests(unittest.TestCase):
+    def test_later_trade_exit_is_excluded_from_reconciliation(self):
+        broker = A.AlpacaBroker.__new__(A.AlpacaBroker)
+        parent = order("parent", client_order_id="orb5-2026-10-26", side="buy")
+        later = order("later", client_order_id="orb5-2026-10-28", side="buy",
+                      filled_at=pd.Timestamp("2026-10-28T13:36Z"))
+        exit_order = order("exit", filled_at=pd.Timestamp("2026-10-27T13:33Z"))
+        later_exit = order("later-exit", filled_at=pd.Timestamp("2026-10-28T16:00Z"))
+        broker.day_orders = Mock(return_value=[parent, exit_order, later, later_exit])
+        self.assertEqual([o.id for o in broker.trade_orders(parent.filled_at.date(), parent.client_order_id)],
+                         ["parent", "exit"])
+
+    def test_duplicate_nested_leg_keeps_parent_link(self):
+        broker = A.AlpacaBroker.__new__(A.AlpacaBroker)
+        leg = order("leg", stop_price=9)
+        parent = order("parent", legs=[leg])
+        broker.client = Mock()
+        broker.client.get_orders.return_value = [parent, leg]
+        orders = broker.day_orders(datetime(2026, 10, 26).date())
+        self.assertEqual(len(orders), 2)
+        self.assertEqual(next(o.parent for o in orders if o.id == "leg"), "parent")
+
     def make_row(self, sold):
         parent = order("entry", side="buy", client_order_id="orb-2026-10-26", filled_qty=10,
                        filled_avg_price=10)
@@ -168,6 +189,20 @@ class ValidationTests(unittest.TestCase):
 
 
 class BackupTests(unittest.TestCase):
+    def test_late_duplicate_after_timely_no_trade_does_not_alarm(self):
+        now = pd.Timestamp("2026-10-29 14:00", tz=bot.TZ)
+        broker = Mock()
+        broker.hours.return_value = (pd.Timestamp("2026-10-29 09:30"), pd.Timestamp("2026-10-29 16:00"))
+        broker.has_order.return_value = False
+        broker.position_qty.return_value = 0
+        broker.open_orders.return_value = []
+        with patch.object(A, "have_keys", return_value=True), patch.object(A, "AlpacaBroker", return_value=broker), \
+             patch.object(A, "AlpacaData"), patch.object(bot.pd, "Timestamp", wraps=pd.Timestamp) as timestamp, \
+             patch.object(bot, "already_sent", return_value=True), patch.object(bot, "push") as push:
+            timestamp.now.return_value = now
+            self.assertEqual(bot.mode_entry(), 0)
+            push.assert_not_called()
+
     def test_old_queued_run_does_not_suppress_recovery(self):
         now = datetime.now(watchdog.ET)
         run = dict(created_at=(now - timedelta(minutes=5)).isoformat(), status="queued", conclusion=None)

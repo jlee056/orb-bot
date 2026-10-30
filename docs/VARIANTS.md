@@ -16,6 +16,15 @@ Three versions of the strategy run at the same time, each in its own Alpaca pape
 | `orb5` | 11 | 8 | 25% | +0.30 | +2.40 | +0.081 | -0.64 | running, next review at 50 trades |
 | `both60` | 11 | 2 | 100% | +0.32 | +0.63 | +0.053 | -0.01 | running, next review at 50 trades |
 
+Execution checks (recorded outcomes):
+
+- `base`: 0 unresolved, 1 missed signals, 0 late closes; record through 2026-10-29.
+- `orb5`: 0 unresolved, 3 missed signals, 1 late closes; record through 2026-10-29.
+- `both60`: 0 unresolved, 1 missed signals, 0 late closes; record through 2026-10-29.
+
+A late close is an execution failure, even if its profit is positive. Results include actual gross fills; account equity can differ because of fees.
+
+
 *Fill gap* is the broker's result minus what the engine expected on the same day. Alpaca's paper fills do not charge slippage, so a gap near zero is expected; real trading would be worse.
 
 <picture>

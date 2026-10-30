@@ -90,10 +90,17 @@ def main():
           "| Variant | Days | Trades | Win rate | Avg R | Total R | Backtest avg R | Fill gap (R) | Status |",
           "|---|---|---|---|---|---|---|---|---|"]
     series = []
+    health = []
     for v in VS.ALL.values():
         log = read(v.path("paper_log"))
         t = log[log["profit"].notna() & log["R"].notna()] if len(log) else log
         bt = VS.BACKTEST[v.name]
+        if len(log):
+            pending = int(log["outcome"].isin(["still_open", "order_not_filled"]).sum())
+            missed = int((log["outcome"] == "missed").sum())
+            late = int((log["outcome"] == "late_close").sum())
+            health.append(f"- `{v.name}`: {pending} unresolved, {missed} missed signals, {late} late closes; "
+                          f"record through {log['date'].iloc[-1]}.")
         series.append((v.name, t))
         if not len(t):
             L.append(f"| `{v.name}` | {len(log)} | 0 | | | | {bt['avg_r']:+.3f} | | {status(v, t)} |")
@@ -102,6 +109,9 @@ def main():
         gap = f"{(both['R'] - both['sim_R']).mean():+.2f}" if len(both) else ""
         L.append(f"| `{v.name}` | {len(log)} | {len(t)} | {(t['profit'] > 0).mean() * 100:.0f}% | "
                  f"{t['R'].mean():+.2f} | {t['R'].sum():+.2f} | {bt['avg_r']:+.3f} | {gap} | {status(v, t)} |")
+    L += ["", "Execution checks (recorded outcomes):", "", *health, "",
+          "A late close is an execution failure, even if its profit is positive. "
+          "Results include actual gross fills; account equity can differ because of fees.", ""]
     L += ["", "*Fill gap* is the broker's result minus what the engine expected on the same day. Alpaca's paper "
           "fills do not charge slippage, so a gap near zero is expected; real trading would be worse.", ""]
     if any(len(t) for _, t in series):
