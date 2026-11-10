@@ -52,6 +52,8 @@ REFERENCE = {
     "qqq": dict(n=432, win=62.7, avgR=0.084, maxDD=684),
     "nq": dict(n=216, win=65, avgR=0.13, PF=1.48, maxDD=985),   # logbook gives NQ win rate as a rounded integer
 }
+REFERENCE_END = {"qqq": "2026-10-09", "nq": None}   # the reference numbers were produced on data ending here
+REGISTERED_END = "2026-10-09"                         # the 2026-11-09 results in docs/WALKFORWARD.md use data to this date
 EULER = 0.5772156649015329
 
 
@@ -389,7 +391,8 @@ def report(market, mode, win, summ, M, base_key, args):
 
 def save(market, mode, win, summ, args):
     os.makedirs(OUT, exist_ok=True)
-    tag = f"{market}_{mode}" + (f"_slip{args.slip}" if args.slip is not None else "")
+    tag = f"{market}_{mode}" + (f"_slip{args.slip}" if args.slip is not None else "") + \
+          (f"_end{args.end}" if args.end and args.end != REGISTERED_END else "")
     win.assign(chosen=win["chosen"].astype(str)).to_csv(os.path.join(OUT, f"walkforward_{tag}.csv"), index=False)
     flat = {k: v for k, v in summ.items() if not isinstance(v, dict)}
     flat.update({f"spa_{k}": v for k, v in summ["spa_zero"].items()})
@@ -402,13 +405,16 @@ def save(market, mode, win, summ, args):
 def run_market(args):
     market, mode = args.market, args.mode
     days = load_days(market)
+    if args.end:
+        days = [d for d in days if str(d.date) <= args.end]
     base = base_params(market, args.slip)
     cells = grid_cells(base)
     base_key = (60, 0.5, True)
     assert cells[base_key] == base, "grid cell (60, 0.5, EMA on) must equal the frozen base parameters"
     results = run_cells(days, cells)
     bench = frame(E.run(days, E.replace(base, entry_mode="always")))
-    if args.slip is None and not check_reproduction(market, E.stats(results[base_key])):
+    ref_part = results[base_key].loc[:REFERENCE_END[market]] if REFERENCE_END[market] else results[base_key]
+    if args.slip is None and not check_reproduction(market, E.stats(ref_part)):
         raise SystemExit("Reproduction gate failed. Stop and find out why before reading any other number.")
     last = max(d.date for d in days)
     windows = make_windows(PROTOCOL["start_year"][market], PROTOCOL["is_years"][mode][market], mode,
@@ -496,6 +502,8 @@ def main():
     ap.add_argument("--mode", choices=["anchored", "rolling"], default="anchored")
     ap.add_argument("--slip", type=float, default=None)
     ap.add_argument("--reps", type=int, default=PROTOCOL["boot_reps"])
+    ap.add_argument("--end", default=None,
+                    help=f"last date of data to use, e.g. {REGISTERED_END} to reproduce the registered results")
     ap.add_argument("--selftest", action="store_true")
     args = ap.parse_args()
     if args.selftest:

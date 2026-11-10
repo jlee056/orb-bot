@@ -47,6 +47,8 @@ Also reported: whether frozen beats re-tuned on the same years (if so, keep free
 
 ## Results (run 2026-11-09, protocol id 6341dcaa)
 
+These results use QQQ data to 2026-10-09. The 2026 data file was refreshed afterwards (to 2026-11-09), so a plain rerun now includes five more weeks; to reproduce the numbers below exactly, run with `--end 2026-10-09` (checked: identical output). The reproduction gate always checks the 2026-10-09 reference slice.
+
 Two deviations from the text above, both disclosed here: (1) the NQ reproduction gate first failed because I compared the NQ win rate (65.3%) with the logbook's rounded "65%" at one-decimal tolerance. The other NQ numbers matched exactly (216 trades, +0.13 R, PF 1.48, max drawdown $985), so the gate now uses half a unit of the published precision. No strategy result changed. (2) Reality Check/SPA are my own numpy code, cross-checked against the `arch` package in a throwaway environment: QQQ consistent p 0.147 here vs 0.150 to 0.156 in `arch`; NQ 0.150 here vs 0.12 to 0.14. Same conclusion either way.
 
 ### QQQ, anchored (primary)

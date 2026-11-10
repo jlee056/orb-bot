@@ -510,11 +510,23 @@ Paper trading yields one data point a day and base trades about 64 times a year,
 - With about 100 trades the standard error is about 0.08 R, as large as the edge, so the paper reviews at 50 and 100 trades cannot tell the edge from zero. The offline record (306 frozen-rule trades in 2022 to 2026) is the stronger evidence.
 - Limits: the grid is centred on the frozen settings; the settings were first chosen on NQ 2023-24; backtest bars are consolidated while the live bot reads one exchange's feed.
 
+### Paper trades against the engine (same day)
+
+`paper_vs_backtest.py` sets every paper trade beside what the engine says it should have done; full tables in [PAPER_VS_BACKTEST.md](PAPER_VS_BACKTEST.md). Three results per trade: A what the broker did, S the engine on the same free one-exchange bars the bot saw, O the engine on consolidated bars. Re-running the engine on freshly fetched free-feed bars reproduces the bot's own logged expectation on all 22 traded days (18 orb5, 4 both60), so the comparison can be trusted.
+
+- **base:** no trades, nothing to compare. The engine agrees with every skipped day.
+- **both60:** 3 trades, execution gap about zero (mean -0.01 R).
+- **orb5, 14 normally closed trades:** the engine expected +9.17 R in total (+0.65 R per trade); the bot got +0.54 R (+0.04 R per trade). Three big winners (10-16, 11-05, 11-09) account for -7.57 of the -8.62 R gap. On the other 11 trades the gap averages only -0.10 R. These days are a lucky sample for the engine, not a new expectation: the long-run backtest average is +0.08 R.
+- **Where the gap comes from:** the bot's stop equals the engine's stop on every trade, so stops are not the issue. Its entry was worse on 64% of trades, by 0.25 dollars a share on average and by 1.01, 2.34 and 1.32 dollars on the three big winners. That is consistent with the known one-minute entry delay (the live order goes out around 9:36:05 instead of the 9:35 open); order timestamps were not checked. Stops are only 0.5 to 3 dollars a share away, so a dollar of worse entry also widens the risk that R is divided by: on those three trades the price effect is -0.67, -0.32 and -0.43 R and the risk-scale effect is -3.70, -1.46 and -0.99 R. In dollars the fills were close; in R the biggest winners shrink a lot.
+- **Feed:** the engine on the free feed and on consolidated bars agrees on 16 of 18 orb5 days. On 10-21 the first 5-minute candle points the other way (the bot went short, consolidated bars say long); on 10-16 the exit differs (target on the free feed, end of day on consolidated). The free feed's version of the engine averages +0.14 R more than consolidated (standard error 0.11).
+- **Missed signals:** orb5's three missed days (10-27 to 10-29) would have lost -3.04 R, so the misses helped by luck. They are still failures to count.
+- Samples are tiny (14 trades); this describes what happened and measures nothing precisely.
+
 ## Next
 
 1. Keep the rules frozen. Let the records run and review each variant at 50, 100 and 312 trades against the rules above, remembering how little 50 or 100 trades can show.
 2. Watch orb5's fill gap (-0.59 R so far). If it stays well below zero, the one-minute entry delay and real slippage are eating the edge.
-3. Compare backtest and paper fills trade by trade (not started).
+3. Decide whether to send orb5's order right after the 9:35 candle closes (about 9:35:05) instead of after the 9:35 minute bar finishes (about 9:36:05). That would match the frozen rule better and should remove most of the execution gap above, but it changes the live order path, so it needs approval and a note in this log; trades before the change stay flagged. base and both60 are not affected.
 4. The walk-forward windows keep choosing a 1.0x target, the edge of the grid. Testing a wider target would be a new variant with its own pre-registered test.
 5. The decision on skipping Fed decision days is still open; no rule has changed.
 6. Revisit funding only if the records hold up.
