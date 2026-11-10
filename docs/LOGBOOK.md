@@ -459,13 +459,65 @@ Slippage stress test:
 
 **A difference to watch: orb5's entry is about a minute late.** The backtest buys at the 9:35 bar's open. The live bot can only see that bar once it has finished, so its order goes out around 9:36:05. It sizes from the latest price and skips the trade if price is already through the stop. Replaying Oct 5 to 9, the fills differed from the engine's by −0.29 R per trade on average, mostly from one day (Oct 9: engine +1.62 R, fill +0.37 R). The "fill gap" column on [VARIANTS.md](VARIANTS.md) tracks this every day.
 
+## 2026-10-15 to 2026-10-25 — Variants go live, first health check
+
+- All three variants started on 2026-10-15, each in its own paper account. Through 10-21: base 0 trades (QQQ was below its 20-day average), orb5 5 trades with 1 win (+1.61 R), both60 1 trade, a win (+0.10 R). Far too early to judge.
+- 2026-10-25 check: all workflows green, the three safe replays matched the logs, no duplicate dates, and the frozen settings hashes still matched.
+
+## 2026-10-26 — The close that failed, and an overnight hold
+
+orb5 bought 42 QQQ at 707.70. The 15:50 close was rejected by the broker because all 42 shares were reserved by the stop and target orders (available 0). Later "green" close runs skipped the day as "already logged", so the open position was not noticed. It stayed open overnight and closed on 10-27 at 09:33 at 715.18, for +313.99 dollars gross (+3.63 R).
+
+That profit is an execution failure, not a strategy result. It is flagged as a late close in the records and left out of every diagnostic below. The local watchdog was also failing at the time (a Windows DLL error), so the morning backup start was not dependable.
+
+## 2026-10-29 — Operations repair (strategy rules untouched)
+
+Details are in [OPERATIONS.md](OPERATIONS.md). Short version:
+
+- A cloud audit confirmed all three accounts flat, and the 10-26 row was corrected from broker history.
+- The close now waits for the cancellations to be acknowledged, retries share reservations, and verifies the account is flat. An already-logged date can no longer skip the broker check. Partial exits stay pending until reconciled.
+- Network failures while sending a notification retry without placing a second entry. Missing data, blocked accounts and late starts now fail visibly. A valid "no trade" morning no longer triggers a false late alarm.
+- orb5 missed its entries on 10-27, 10-28 and 10-29, and base and both60 missed 10-29, because the jobs started in the afternoon (10-29: 14:27 ET). The cause of the scheduler delay was not proven.
+- The watchdog now uses GitHub's REST interface with the stored credential. Six Windows tasks were reinstalled. Windows refused an independent scheduled probe, so a hidden login helper runs the morning checks (the PC must be awake, online and signed in). The cloud schedules remain as a backup.
+- 19 regression tests pass locally and in CI. The settings hashes are unchanged.
+
+## 2026-10-30 to 2026-11-09 — First weeks after the repair
+
+The helper started the jobs at 08:45 ET on 10-30 and all three accounts were verified flat after that close. Entries and closes have run on every trading day since; some 11-05 runs were manual dispatches, and the reason was not investigated. No new missed signal or late close has been recorded since the repair.
+
+| orb5 trade | Result (R) | Gross profit |
+|---|---|---|
+| 10-30 short 26, stop | -0.99 | -79.65 |
+| 11-02 short 100, stop | -1.02 | -132.95 |
+| 11-03 short 32, end of day | -0.05 | -3.70 |
+| 11-04 short 41, stop | -1.16 | -77.10 |
+| 11-05 short 13, end of day | +3.34 | +333.94 |
+| 11-06 short 22, stop | -1.03 | -44.30 |
+| 11-09 long 16, end of day | +2.67 | +208.58 |
+
+- both60 took one trade in this period (11-05, +0.22 R). base was filtered by the trend rule on every day: QQQ has stayed under its 20-day average since mid-October.
+- Published record through 2026-11-09: orb5 15 closed trades, 27% wins, average +0.28 R, total +4.17 R, fill gap -0.59 R. both60 3 trades, all wins, +0.86 R. base 0 trades in 21 days. Total R for orb5 includes the +3.63 R overnight failure; without it the published rows add to about +0.54 R over 14 trades (arithmetic on the published rows). orb5 also has 3 missed signals and 1 late close.
+- 2026-11-01 comparison with public work: no evidence yet of outperformance. An independent replication of the 5-minute QQQ rules found the edge disappears at about 2 cents of entry slippage; our orb5 fill gap is about -0.59 R. Short samples and execution problems prevent a fair ranking.
+- Nothing is retuned from these results. The review rules above still apply.
+
+## 2026-11-09 — Testing review and walk-forward test
+
+Paper trading yields one data point a day and base trades about 64 times a year, so it is a slow way to learn anything. The offline engine is fast, so a proper out-of-sample test was added. Full protocol (fixed before the first real run) and results: [WALKFORWARD.md](WALKFORWARD.md); code in `walkforward.py` with 19 tests in `test_walkforward.py`.
+
+- It re-tunes a 50-setting grid each year on past data and trades the winner on the next unseen year. On QQQ 2022 to 2026: 320 trades, +0.10 R per trade, every window positive. The frozen base on the same years made +0.12 R, and buying every day made -0.01 R.
+- After correcting for having searched the grid, the result is not significant (SPA p = 0.15). Counting the roughly 800 earlier settings, the deflated Sharpe ratio of the frozen base is 0.24. At 5 cents of slippage the out-of-sample edge falls to +0.06 R.
+- Verdict under the pre-registered rules: plausible, not proven. Re-tuning did no better than the frozen settings, so the rules stay frozen.
+- With about 100 trades the standard error is about 0.08 R, as large as the edge, so the paper reviews at 50 and 100 trades cannot tell the edge from zero. The offline record (306 frozen-rule trades in 2022 to 2026) is the stronger evidence.
+- Limits: the grid is centred on the frozen settings; the settings were first chosen on NQ 2023-24; backtest bars are consolidated while the live bot reads one exchange's feed.
+
 ## Next
 
-1. Confirm the first full scheduled day (alert, entry, close, log) runs without help, for all three variants.
-2. Let the records run. Review each variant at 50, 100 and 312 trades against the rules above.
-3. Watch orb5's fill gap. If it stays well below zero, the one-minute delay is eating the edge.
-4. Decide whether to skip Fed decision days (next one: 2026-10-28).
-5. Revisit funding only if the records hold up.
+1. Keep the rules frozen. Let the records run and review each variant at 50, 100 and 312 trades against the rules above, remembering how little 50 or 100 trades can show.
+2. Watch orb5's fill gap (-0.59 R so far). If it stays well below zero, the one-minute entry delay and real slippage are eating the edge.
+3. Compare backtest and paper fills trade by trade (not started).
+4. The walk-forward windows keep choosing a 1.0x target, the edge of the grid. Testing a wider target would be a new variant with its own pre-registered test.
+5. The decision on skipping Fed decision days is still open; no rule has changed.
+6. Revisit funding only if the records hold up.
 
 ## Data and sources
 
