@@ -1,0 +1,17 @@
+{
+ "windows": 2,
+ "share_positive": 1.0,
+ "wfe_trade": 0.20301476906669275,
+ "wfe_year": 0.14322930938148176,
+ "param_changes": 1,
+ "fallbacks": 0,
+ "oos_mean_p": 0.4052,
+ "pbo": 0.6380730380730381,
+ "spa_spa_lower": 0.1474,
+ "spa_spa_consistent": 0.15,
+ "spa_spa_upper": 0.15,
+ "spa_rc": 0.1276,
+ "spa_best_cell": 28,
+ "spa_best_mean_R_per_day": 0.040542006651931285,
+ "protocol_id": "6341dcaa"
+}

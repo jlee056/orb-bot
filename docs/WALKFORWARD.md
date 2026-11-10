@@ -45,5 +45,46 @@ Also reported: whether frozen beats re-tuned on the same years (if so, keep free
 - Slippage is a fixed 2 cents; real fills in the first minutes can be worse.
 - 2020 starts on Jan 23 in the data; the QQQ settings were tuned on NQ, so the QQQ years 2023-24 are not independent of the tuning.
 
-## Results
-(appended after the first real run)
+## Results (run 2026-11-09, protocol id 6341dcaa)
+
+Two deviations from the text above, both disclosed here: (1) the NQ reproduction gate first failed because I compared the NQ win rate (65.3%) with the logbook's rounded "65%" at one-decimal tolerance. The other NQ numbers matched exactly (216 trades, +0.13 R, PF 1.48, max drawdown $985), so the gate now uses half a unit of the published precision. No strategy result changed. (2) Reality Check/SPA are my own numpy code, cross-checked against the `arch` package in a throwaway environment: QQQ consistent p 0.147 here vs 0.150 to 0.156 in `arch`; NQ 0.150 here vs 0.12 to 0.14. Same conclusion either way.
+
+### QQQ, anchored (primary)
+| OOS year | Chosen cell (range, target, EMA) | OOS trades | OOS avg R | Frozen base avg R |
+|---|---|---|---|---|
+| 2022 | 75 min, 1.0x, off | 79 | +0.137 | +0.292 |
+| 2023 | 75 min, 1.0x, off | 93 | +0.121 | +0.178 |
+| 2024 | 90 min, 1.0x, on | 55 | +0.100 | +0.095 |
+| 2025 | 90 min, 1.0x, on | 52 | +0.023 | +0.048 |
+| 2026 to Oct 9 | 90 min, 1.0x, on | 41 | +0.111 | +0.054 |
+
+Stitched out-of-sample (re-tuned each year): 320 trades, 52.5% wins, +0.104 R, t 1.87, PF 1.27, max drawdown $512. Frozen base on the same years: 306 trades, 64.1% wins, +0.118 R, t 2.64, PF 1.38, max drawdown $339. Buy-every-day benchmark: 416 trades, -0.014 R.
+All 5 windows positive; walk-forward efficiency 0.98 per trade; one parameter change; single-test bootstrap p 0.019.
+Data snooping over the 50 cells, whole sample: White Reality Check 0.164, SPA consistent 0.147 (block 5 and 20: 0.155 and 0.119). PBO 0.24. Effective independent cells about 3.6.
+Deflated Sharpe of the frozen base: 0.54 counting the 50 grid cells, 0.89 counting about 4 effective cells, 0.24 counting the roughly 800 earlier settings.
+
+### Other runs
+| Run | Stitched OOS | Frozen, same years | Windows positive | WFE | SPA consistent p |
+|---|---|---|---|---|---|
+| QQQ rolling (3-year in-sample), OOS 2023 to 2026 | 241 trades, +0.093 R, t 1.45 | +0.097 R | 4 of 4 | 0.61 | 0.147 |
+| QQQ anchored, 5 cents slippage | 332 trades, +0.062 R, t 1.19 | +0.090 R | 4 of 5 | 0.92 | 0.494 |
+| NQ anchored, OOS 2024 to 2026 | 107 trades, +0.080 R, t 0.87 | +0.108 R | 3 of 3 | 0.48 | 0.150 (PBO 0.64) |
+| NQ rolling, OOS 2025 to 2026 | 60 trades, +0.025 R, t 0.24 | +0.137 R | 2 of 2 | 0.20 | 0.150 |
+
+### Pre-registered checks (QQQ anchored and rolling): pass, pass, pass, FAIL
+Out-of-sample average R above 0: pass. At least 60% of windows positive: pass. Walk-forward efficiency at least 0.5: pass. SPA consistent p below 0.05: fail (0.147). NQ anchored also fails efficiency (0.48). Verdict: plausible, not proven. Frozen settings did as well as or better than re-tuning in every run, so keep freezing.
+
+### What it means
+- The tuned process has not fallen apart out of sample: every QQQ window is positive, the breakout beats buying every day (-0.014 R), and the edge is about +0.10 R per trade.
+- The edge does not survive correction for the search. The frozen base looks significant on its own (t about 2.2), but once the 50-cell grid is counted the best-cell p-value is 0.15, and counting the earlier 800 settings the deflated Sharpe is 0.24. This matches the logbook's own caveat that the edge is "plausible, not proven".
+- Costs matter: at 5 cents slippage the re-tuned out-of-sample result falls from +0.104 to +0.062 R, and the SPA p-value goes to 0.49.
+- Re-tuning adds nothing over the frozen settings. Every window picks a wider target (1.0x, the edge of the grid) and a longer range (75 or 90 minutes). The data keeps preferring a bigger target than the frozen 0.5x, but acting on that would be a new search and needs its own pre-registered test; nothing changes here.
+- Power: with about 100 trades the standard error is about 0.08 R, as large as the edge itself, so the paper-trading reviews at 50 and 100 trades cannot tell the edge from zero. The offline record already holds 306 trades for the frozen base in 2022 to 2026, which is why it carries more information per week than paper trading does.
+
+### Caveats on these results
+- The grid is centred on the frozen settings, so this tests re-tuning near an already-chosen region, not a search from scratch. The earlier 800 settings are outside the walk-forward and only enter through the deflated Sharpe.
+- The frozen base is not truly out of sample on these years: it was chosen with NQ 2023-24 data and then checked on QQQ. That biases "frozen vs re-tuned" in favour of frozen. NQ's out-of-sample years 2024 to 2026 overlap the NQ tuning years.
+- Small windows: the 2026 window holds 41 QQQ trades (13 on NQ). A single window can move by 0.1 R on noise alone (two of six null datasets did).
+- The first real run was not repeated or adjusted afterwards, apart from the gate-tolerance fix above.
+
+Files: `walkforward.py`, `test_walkforward.py`, outputs in `docs/data/walkforward_*.csv` and `.json`.

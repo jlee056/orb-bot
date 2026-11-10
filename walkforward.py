@@ -50,7 +50,7 @@ PROTOCOL_ID = hashlib.sha1(json.dumps(PROTOCOL, sort_keys=True).encode()).hexdig
 # Reproduction gate: numbers from docs/LOGBOOK.md and variants.BACKTEST for the frozen base.
 REFERENCE = {
     "qqq": dict(n=432, win=62.7, avgR=0.084, maxDD=684),
-    "nq": dict(n=216, win=65.0, avgR=0.13, PF=1.48),
+    "nq": dict(n=216, win=65, avgR=0.13, PF=1.48, maxDD=985),   # logbook gives NQ win rate as a rounded integer
 }
 EULER = 0.5772156649015329
 
@@ -319,10 +319,12 @@ def analyse(results, base_key, bench, windows, min_trades, reps, seed, block, cs
 def check_reproduction(market, base_stats):
     ref = REFERENCE[market]
     ok = base_stats["n"] == ref["n"]
-    for k, tol in (("win", 0.06), ("avgR", 0.0006), ("maxDD", 0.6), ("PF", 0.006)):
+    # Tolerance is half a unit in the last digit the reference was published with (65 means 64.5 to 65.5).
+    for k, tol in (("win", 0.5 if float(ref.get("win", 0)).is_integer() else 0.06), ("avgR", 0.0055),
+                   ("maxDD", 0.6), ("PF", 0.006)):
         if k in ref:
             key = {"win": "win%", "maxDD": "maxDD$"}.get(k, k)
-            ok &= abs(base_stats[key] - ref[k]) <= tol + (0.005 if k == "avgR" else 0)
+            ok &= abs(base_stats[key] - ref[k]) <= tol
     print(f"Reproduction gate ({market}): got n={base_stats['n']}, win={base_stats['win%']}, avgR={base_stats['avgR']}, "
           f"maxDD={base_stats.get('maxDD$')}, PF={base_stats.get('PF')}  vs  {ref}  ->  {'PASS' if ok else 'FAIL'}")
     return ok
@@ -348,8 +350,9 @@ def report(market, mode, win, summ, M, base_key, args):
     print(f"Walk-forward efficiency: per trade {summ['wfe_trade']:.2f}, per day {summ['wfe_year']:.2f}")
     print(f"Single-test bootstrap p (stitched OOS mean <= 0): {summ['oos_mean_p']:.3f}")
     s = summ["spa_zero"]
-    best = M.columns[s["best_cell"]]
-    print(f"Best cell over the whole sample: {best}, mean {s['best_mean_R_per_day']:.4f} R per day")
+    b = M.columns[s["best_cell"]]
+    print(f"Best cell over the whole sample: {int(b[0])}m x{float(b[1])} EMA {'on' if b[2] else 'off'}, "
+          f"mean {s['best_mean_R_per_day']:.4f} R per day")
     print(f"Data-snooping p over {M.shape[1]} cells vs zero: White RC {s['rc']:.3f}, SPA lower {s['spa_lower']:.3f}, "
           f"consistent {s['spa_consistent']:.3f}, upper {s['spa_upper']:.3f}")
     print(f"PBO (CSCV, {PROTOCOL['cscv_blocks']} blocks): {summ['pbo']:.2f}")
