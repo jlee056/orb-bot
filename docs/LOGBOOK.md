@@ -512,7 +512,7 @@ Paper trading yields one data point a day and base trades about 64 times a year,
 
 ### Paper trades against the engine (same day)
 
-`paper_vs_backtest.py` sets every paper trade beside what the engine says it should have done; full tables in [PAPER_VS_BACKTEST.md](PAPER_VS_BACKTEST.md). Three results per trade: A what the broker did, S the engine on the same free one-exchange bars the bot saw, O the engine on consolidated bars. Re-running the engine on freshly fetched free-feed bars reproduces the bot's own logged expectation on all 22 traded days (18 orb5, 4 both60), so the comparison can be trusted.
+`paper_vs_backtest.py` sets every paper trade beside what the engine says it should have done; full tables in [PAPER_VS_BACKTEST.md](PAPER_VS_BACKTEST.md). Three results per trade: A what the broker did, S the engine on the same free one-exchange bars the bot saw, O the engine on consolidated bars. Re-running the engine on freshly fetched free-feed bars reproduces the bot's own logged expectation on all 23 days where the engine took a trade (18 orb5, 4 both60, 1 base; this includes the missed-signal days), so the comparison can be trusted.
 
 - **base:** no trades, nothing to compare. The engine agrees with every skipped day.
 - **both60:** 3 trades, execution gap about zero (mean -0.01 R).
