@@ -372,6 +372,27 @@ def mode_entry():
         time.sleep(10 if candle else 60)
 
 
+def print_fill_times(broker, day_date):
+    """Print when today's entry order was submitted and filled, so fill delay can be measured later.
+
+    Output only: it never changes an order or the CSV log, and any failure is swallowed.
+    """
+    try:
+        orders = broker.day_orders(day_date)
+        parent = next((o for o in orders if o.client_order_id == order_id(day_date)), None)
+        if parent is None:
+            return
+        def stamp(t):
+            return "" if t is None else pd.Timestamp(t).tz_convert("UTC").strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+        sub, fil = getattr(parent, "submitted_at", None), parent.filled_at
+        delay = ""
+        if sub is not None and fil is not None:
+            delay = f"{(pd.Timestamp(fil) - pd.Timestamp(sub)).total_seconds():.1f}"
+        print(f"FILLTIMES {day_date} {V.name} submitted={stamp(sub)} filled={stamp(fil)} delay_s={delay}")
+    except Exception as e:
+        print(f"FILLTIMES unavailable: {e}")
+
+
 def mode_close():
     if not A.have_keys():
         raise RuntimeError("Alpaca paper keys are not set")
@@ -392,6 +413,7 @@ def mode_close():
     remaining = (hours[1] + pd.Timedelta(minutes=3) - pd.Timestamp.now(tz=TZ).tz_localize(None)).total_seconds()
     if remaining > 0:
         time.sleep(remaining)
+    print_fill_times(broker, today)
     reconcile_pending(broker, data, p)
     previous = next((r for r in read_rows(LOG) if r["date"] == today.isoformat()), None)
     if previous is None:

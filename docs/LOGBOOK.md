@@ -522,11 +522,15 @@ Paper trading yields one data point a day and base trades about 64 times a year,
 - **Missed signals:** orb5's three missed days (10-27 to 10-29) would have lost -3.04 R, so the misses helped by luck. They are still failures to count.
 - Samples are tiny (14 trades); this describes what happened and measures nothing precisely.
 
+## 2026-11-10 — Fill times now recorded
+
+Done as agreed: after the close run, the bot prints one line per variant, `FILLTIMES <date> <variant> submitted=... filled=... delay_s=...`, taken from the broker's own order timestamps. It only prints. It touches no order, no rule and no CSV file (the paper log's strict format and the hand-off between jobs are unchanged), and any error in it is swallowed so it cannot disturb the close. The lines appear in the paper-close run logs from the next trading day on; collect them after a few weeks and compare with the inferred delays in [ENTRY_TIMING.md](ENTRY_TIMING.md). Tests: `test_fill_times.py` (3), plus the existing 47 still pass; base settings unchanged.
+
 ## Next
 
 1. Keep the rules frozen. Let the records run and review each variant at 50, 100 and 312 trades against the rules above, remembering how little 50 or 100 trades can show.
 2. Watch orb5's fill gap (-0.59 R so far). If it stays well below zero, the one-minute entry delay and real slippage are eating the edge.
-3. No change to orb5's order timing for now. The bot submits at about 9:36:05 by design (it waits for the 9:35 bar to exist in the data), and on fast mornings the paper simulator fills a minute or more later. Sending at about 9:35:05 would save only the first minute and touches the live order path. A cheap change that alters no behaviour: record each order's submission and fill time in the paper log, so the next review can measure the delay instead of inferring it from prices.
+3. No change to orb5's order timing for now. The bot submits at about 9:36:05 by design (it waits for the 9:35 bar to exist in the data), and on fast mornings the paper simulator fills a minute or more later. Sending at about 9:35:05 would save only the first minute and touches the live order path. Done on 11-10: each order's submission and fill time is now printed in the close run log (see above), so the next review can measure the delay instead of inferring it from prices.
 4. The walk-forward windows keep choosing a 1.0x target, the edge of the grid. Testing a wider target would be a new variant with its own pre-registered test.
 5. The decision on skipping Fed decision days is still open; no rule has changed.
 6. Revisit funding only if the records hold up.

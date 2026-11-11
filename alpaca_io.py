@@ -236,7 +236,7 @@ class AlpacaBroker:
                 id=str(o.id), parent=parent, client_order_id=o.client_order_id,
                 side=str(getattr(o.side, "value", o.side)), type=str(getattr(o.type, "value", o.type)),
                 status=str(getattr(o.status, "value", o.status)), filled_qty=_f(o.filled_qty) or 0.0,
-                filled_at=getattr(o, "filled_at", None),
+                filled_at=getattr(o, "filled_at", None), submitted_at=getattr(o, "submitted_at", None),
                 filled_avg_price=_f(o.filled_avg_price), limit_price=_f(o.limit_price), stop_price=_f(o.stop_price)))
             for leg in (o.legs or []):
                 add(leg, str(o.id))
