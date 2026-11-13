@@ -36,9 +36,9 @@ A late close is an execution failure, even if its profit is positive. Results in
 
 | Variant | Days | Signals | Win rate | Avg R | Total R |
 |---|---|---|---|---|---|
-| `base` | 24 | 0 | | | |
-| `orb5` | 21 | 21 | 29% | +0.29 | +6.01 |
-| `both60` | 21 | 4 | 75% | +0.03 | +0.11 |
+| `base` | 25 | 0 | | | |
+| `orb5` | 22 | 22 | 32% | +0.40 | +8.73 |
+| `both60` | 22 | 4 | 75% | +0.03 | +0.11 |
 
 ## Rules for judging, fixed in advance
 
