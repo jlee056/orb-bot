@@ -27,3 +27,4 @@ date,config_id,bar_min,range_high,range_low,range_pct,flags,outcome,entry,stop,t
 2026-11-16,00c5314f,1,27716.25,27339.00,0.01370,below_ema;range_wide,filtered,,,,,,,,,,2026-11-16T22:30Z
 2026-11-17,00c5314f,1,27351.00,27131.00,0.00808,below_ema;range_wide,filtered,,,,,,,,,,2026-11-17T22:30Z
 2026-11-18,00c5314f,1,27325.50,26951.75,0.01377,below_ema;range_wide,filtered,,,,,,,,,,2026-11-18T22:30Z
+2026-11-19,00c5314f,1,27838.00,27332.75,0.01832,below_ema;gap;range_wide,filtered,,,,,,,,,,2026-11-19T22:30Z
