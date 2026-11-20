@@ -25,3 +25,4 @@ date,config_id,source,outcome,shares,entry,stop,target,exit,profit,R,shares_5k,p
 2026-11-17,baa9b9f8,alpaca-paper/alpaca-iex,stop,43,661.35,663.15,642.14,663.30,-83.86,-1.083,7,-13.65,stop,-1.010,2026-11-17T21:03Z
 2026-11-18,baa9b9f8,alpaca-paper/alpaca-iex,stop,21,658.33,662.28,639.84,662.48,-87.18,-1.052,7,-29.06,stop,-1.010,2026-11-18T21:03Z
 2026-11-19,baa9b9f8,alpaca-paper/alpaca-iex,stop,23,674.94,670.67,710.16,671.12,-87.86,-0.895,7,-26.74,stop,-1.006,2026-11-19T21:03Z
+2026-11-20,baa9b9f8,alpaca-paper/alpaca-iex,stop,25,635.91,638.57,601.06,638.45,-63.31,-0.954,7,-17.73,stop,-1.006,2026-11-20T21:03Z
