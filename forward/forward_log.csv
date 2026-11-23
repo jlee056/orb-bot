@@ -29,3 +29,4 @@ date,config_id,bar_min,range_high,range_low,range_pct,flags,outcome,entry,stop,t
 2026-11-18,00c5314f,1,27325.50,26951.75,0.01377,below_ema;range_wide,filtered,,,,,,,,,,2026-11-18T22:30Z
 2026-11-19,00c5314f,1,27838.00,27332.75,0.01832,below_ema;gap;range_wide,filtered,,,,,,,,,,2026-11-19T22:30Z
 2026-11-20,00c5314f,1,26504.25,25955.00,0.02094,friday;below_ema;range_wide,filtered,,,,,,,,,,2026-11-20T22:30Z
+2026-11-23,00c5314f,1,27137.00,26450.25,0.02563,vix_high;below_ema;gap;range_wide,filtered,,,,,,,,,,2026-11-23T22:30Z
