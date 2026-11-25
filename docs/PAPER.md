@@ -6,7 +6,7 @@ Each trade is sized to risk about $75. The "$5,000 account" column shows what th
 
 Paper fills are optimistic: Alpaca's simulator does not model slippage or market impact.
 
-**Days logged:** 32 (2026-10-12 to 2026-11-24)  
+**Days logged:** 33 (2026-10-12 to 2026-11-25)  
 **Trades closed:** 0  
 **Missed signals:** 1 (the engine saw a breakout but no order went out)  
 
@@ -16,6 +16,7 @@ Paper fills are optimistic: Alpaca's simulator does not model slippage or market
 
 | Date | Outcome | Shares | Entry | Stop | Target | Exit | Result (R) | Practice profit | $5,000 account |
 |---|---|---|---|---|---|---|---|---|---|
+| 2026-11-25 | Skipped (trend filter) |  |  |  |  |  |  |  |  |
 | 2026-11-24 | Skipped (trend filter) |  |  |  |  |  |  |  |  |
 | 2026-11-23 | Skipped (trend filter) |  |  |  |  |  |  |  |  |
 | 2026-11-20 | Skipped (trend filter) |  |  |  |  |  |  |  |  |
@@ -35,7 +36,6 @@ Paper fills are optimistic: Alpaca's simulator does not model slippage or market
 | 2026-11-02 | Skipped (trend filter) |  |  |  |  |  |  |  |  |
 | 2026-10-30 | Skipped (trend filter) |  |  |  |  |  |  |  |  |
 | 2026-10-29 | MISSED: engine traded, no order sent |  |  |  |  |  |  |  |  |
-| 2026-10-28 | Skipped (trend filter) |  |  |  |  |  |  |  |  |
 
 ## Other orders in this account
 
